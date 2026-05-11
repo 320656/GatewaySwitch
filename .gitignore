@@ -1,0 +1,18 @@
+# Kiro
+.kiro
+
+# Build output
+dist/
+bin/
+obj/
+
+# NuGet
+packages/
+*.nupkg
+
+# OS junk
+Thumbs.db
+Desktop.ini
+.DS_Store
+Program.cs
+archived

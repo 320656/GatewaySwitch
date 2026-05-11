@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <RootNamespace>YuanxinGateway</RootNamespace>
+    <AssemblyName>GatewaySwitch</AssemblyName>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>assets\app.ico</ApplicationIcon>
+    <ApplicationManifest>GatewaySwitch.manifest</ApplicationManifest>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude Program.cs since it's a separate app (GptSwitch) with its own Main -->
+    <Compile Remove="Program.cs" />
+  </ItemGroup>
+
+</Project>
