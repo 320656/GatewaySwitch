@@ -18,8 +18,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Exclude Program.cs since it's a separate app (GptSwitch) with its own Main -->
+    <!-- Exclude archived files -->
     <Compile Remove="Program.cs" />
+    <Compile Remove="archived\**" />
   </ItemGroup>
 
 </Project>

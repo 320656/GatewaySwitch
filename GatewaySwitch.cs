@@ -681,6 +681,9 @@ namespace YuanxinGateway
                 command += "Set-DnsClientServerAddress -InterfaceIndex $idx -ResetServerAddresses -ErrorAction Stop;";
             }
 
+            command += "Clear-DnsClientCache -ErrorAction SilentlyContinue;"
+                + "Register-DnsClient -ErrorAction SilentlyContinue;";
+
             RunPowerShell(command);
             ClearOriginal();
         }
