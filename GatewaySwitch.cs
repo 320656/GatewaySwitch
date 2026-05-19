@@ -58,6 +58,10 @@ namespace YuanxinGateway
 
         private bool enabledByApp;
         private bool allowExit;
+        private bool isProcessing;
+        private System.Windows.Forms.Timer loadingTimer;
+        private string loadingBaseText;
+        private int loadingDotCount;
 
         [DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
@@ -215,6 +219,10 @@ namespace YuanxinGateway
             cardPanel.Controls.Add(detailLabel);
             cardPanel.Controls.Add(testButton);
 
+            loadingTimer = new System.Windows.Forms.Timer();
+            loadingTimer.Interval = 500;
+            loadingTimer.Tick += LoadingTimer_Tick;
+
             refreshTimer = new System.Windows.Forms.Timer();
             refreshTimer.Interval = 3000;
             refreshTimer.Tick += RefreshTimer_Tick;
@@ -268,45 +276,79 @@ namespace YuanxinGateway
             }
         }
 
-        private void PowerButton_Click(object sender, EventArgs e)
+        private void LoadingTimer_Tick(object sender, EventArgs e)
         {
+            loadingDotCount = (loadingDotCount + 1) % 4;
+            routeStateLabel.Text = loadingBaseText + new string('.', loadingDotCount);
+        }
+
+        private void StartLoading(string text)
+        {
+            isProcessing = true;
+            powerButton.Enabled = false;
+            testButton.Enabled = false;
+            loadingBaseText = text;
+            loadingDotCount = 0;
+            routeStateLabel.Text = text;
+            routeStateLabel.ForeColor = primaryColor;
+            loadingTimer.Start();
+        }
+
+        private void StopLoading()
+        {
+            isProcessing = false;
+            powerButton.Enabled = true;
+            testButton.Enabled = true;
+            loadingTimer.Stop();
+        }
+
+        private async void PowerButton_Click(object sender, EventArgs e)
+        {
+            if (isProcessing) return;
+
             if (enabledByApp)
             {
-                RestoreWifi();
+                await RestoreWifiAsync();
             }
             else
             {
-                EnableGateway();
+                await EnableGatewayAsync();
             }
         }
 
-        private void EnableGateway()
+        private async System.Threading.Tasks.Task EnableGatewayAsync()
         {
             try
             {
-                GatewayManager.Enable(TargetGateway);
+                StartLoading("正在配置旁路由");
+                await System.Threading.Tasks.Task.Run(() => GatewayManager.Enable(TargetGateway));
                 enabledByApp = true;
+                StopLoading();
                 UpdateRouteVisualState();
                 RunLatencyTest();
             }
             catch (Exception ex)
             {
+                StopLoading();
                 MessageBox.Show(this, "配置旁路由失败：" + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 enabledByApp = GatewayManager.IsTargetActive(TargetGateway);
                 UpdateRouteVisualState();
             }
         }
 
-        private void RestoreWifi()
+        private async System.Threading.Tasks.Task RestoreWifiAsync()
         {
             try
             {
-                GatewayManager.Restore(TargetGateway);
+                StartLoading("正在恢复原始网络");
+                await System.Threading.Tasks.Task.Run(() => GatewayManager.Restore(TargetGateway));
                 enabledByApp = false;
+                StopLoading();
                 UpdateRouteVisualState();
             }
             catch (Exception ex)
             {
+                StopLoading();
                 MessageBox.Show(this, "恢复 Wi-Fi 配置失败：" + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 enabledByApp = GatewayManager.IsTargetActive(TargetGateway);
                 UpdateRouteVisualState();
@@ -555,6 +597,7 @@ namespace YuanxinGateway
         public string IPv4Address;
         public string Gateway;
         public List<string> DnsServers = new List<string>();
+        public bool IsDnsDhcp;
     }
 
     internal static class GatewayManager
@@ -596,6 +639,15 @@ namespace YuanxinGateway
                 config.InterfaceAlias = item.Name;
                 config.InterfaceIndex = ipv4Props.Index;
                 config.IPv4Address = address;
+
+                using (RegistryKey key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\" + item.Id))
+                {
+                    if (key != null)
+                    {
+                        string nameServer = key.GetValue("NameServer") as string;
+                        config.IsDnsDhcp = string.IsNullOrEmpty(nameServer);
+                    }
+                }
 
                 foreach (GatewayIPAddressInformation gateway in props.GatewayAddresses)
                 {
@@ -671,14 +723,14 @@ namespace YuanxinGateway
                     + "New-NetRoute -InterfaceIndex $idx -DestinationPrefix '0.0.0.0/0' -NextHop $oldgw -RouteMetric 10 -PolicyStore ActiveStore -ErrorAction SilentlyContinue;";
             }
 
-            if (original.DnsServers.Count > 0)
+            if (original.IsDnsDhcp || original.DnsServers.Count == 0)
             {
-                command += "$dns=@(" + QuotePowerShellArray(original.DnsServers) + ");"
-                    + "Set-DnsClientServerAddress -InterfaceIndex $idx -ServerAddresses $dns -ErrorAction Stop;";
+                command += "Set-DnsClientServerAddress -InterfaceIndex $idx -ResetServerAddresses -ErrorAction Stop;";
             }
             else
             {
-                command += "Set-DnsClientServerAddress -InterfaceIndex $idx -ResetServerAddresses -ErrorAction Stop;";
+                command += "$dns=@(" + QuotePowerShellArray(original.DnsServers) + ");"
+                    + "Set-DnsClientServerAddress -InterfaceIndex $idx -ServerAddresses $dns -ErrorAction Stop;";
             }
 
             command += "Clear-DnsClientCache -ErrorAction SilentlyContinue;"
@@ -696,6 +748,7 @@ namespace YuanxinGateway
                 key.SetValue("InterfaceIndex", config.InterfaceIndex, RegistryValueKind.DWord);
                 key.SetValue("Gateway", config.Gateway ?? string.Empty, RegistryValueKind.String);
                 key.SetValue("DnsServers", string.Join(";", config.DnsServers.ToArray()), RegistryValueKind.String);
+                key.SetValue("IsDnsDhcp", config.IsDnsDhcp ? 1 : 0, RegistryValueKind.DWord);
             }
         }
 
@@ -716,6 +769,7 @@ namespace YuanxinGateway
                 {
                     config.DnsServers.AddRange(dns.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries));
                 }
+                config.IsDnsDhcp = Convert.ToInt32(key.GetValue("IsDnsDhcp", 0)) == 1;
             }
             return config;
         }
@@ -772,6 +826,7 @@ namespace YuanxinGateway
             public int InterfaceIndex;
             public string Gateway;
             public List<string> DnsServers = new List<string>();
+            public bool IsDnsDhcp;
         }
     }
 

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>元信旁路由</title>
+    <style>
+        :root {
+            --bg-color: #10131a;
+            --card-color: #1d2027;
+            --card-border: #424754;
+            --primary: #adc6ff;
+            --primary-dim: #4d8eff;
+            --text: #e1e2ec;
+            --muted: #c2c6d6;
+            --danger: #ffb4ab;
+            --success: #48e092;
+            --warning: #ffb786;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text);
+            font-family: 'Microsoft YaHei UI', system-ui, -apple-system, sans-serif;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* 模拟发光背景 */
+        .glow-1 {
+            position: absolute;
+            top: -75px;
+            right: -50px;
+            width: 230px;
+            height: 230px;
+            background: rgba(173, 198, 255, 0.07);
+            border-radius: 50%;
+            filter: blur(40px);
+        }
+        
+        .glow-2 {
+            position: absolute;
+            bottom: -50px;
+            left: -95px;
+            width: 250px;
+            height: 250px;
+            background: rgba(255, 183, 134, 0.05);
+            border-radius: 50%;
+            filter: blur(40px);
+        }
+
+        .container {
+            width: 440px;
+            height: 620px;
+            position: relative;
+            z-index: 1;
+            padding: 24px 28px;
+            box-sizing: border-box;
+        }
+
+        .header h1 {
+            color: var(--primary);
+            margin: 0;
+            font-size: 24px;
+        }
+
+        .header p {
+            color: var(--muted);
+            margin: 4px 0 0 2px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .power-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 40px;
+        }
+
+        .power-btn {
+            width: 180px;
+            height: 180px;
+            border-radius: 50%;
+            background-color: #32353c;
+            color: var(--muted);
+            border: none;
+            font-size: 72px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .power-btn.active {
+            background-color: var(--primary);
+            color: #002e6a;
+            box-shadow: 0 0 20px rgba(173, 198, 255, 0.2);
+        }
+
+        .status-text {
+            margin-top: 16px;
+            font-size: 15px;
+            font-weight: bold;
+            color: var(--muted);
+            height: 24px;
+        }
+
+        .status-text.active {
+            color: var(--primary);
+        }
+
+        .card {
+            background-color: var(--card-color);
+            border: 1px solid var(--card-border);
+            border-radius: 22px;
+            padding: 20px 22px;
+            margin-top: 40px;
+            position: relative;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-header h2 {
+            margin: 0;
+            font-size: 20px;
+        }
+
+        .badge {
+            background-color: #32353c;
+            color: var(--muted);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+
+        .latency-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 16px;
+        }
+
+        .latency-label {
+            color: #8c909f;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .latency-value {
+            color: var(--primary);
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .progress-track {
+            height: 7px;
+            background-color: #262a32;
+            border-radius: 4px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background-color: var(--primary);
+            border-radius: 4px;
+            transition: width 0.5s ease, background-color 0.3s ease;
+        }
+
+        .detail-text {
+            color: var(--muted);
+            font-size: 11px;
+            margin-top: 8px;
+        }
+
+        .test-btn {
+            width: 100%;
+            padding: 10px;
+            background-color: var(--primary);
+            color: #002e6a;
+            border: none;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-top: 16px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .test-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="glow-1"></div>
+    <div class="glow-2"></div>
+
+    <div class="container">
+        <div class="header">
+            <h1>元信旁路由</h1>
+            <p>Wi-Fi 网关助手</p>
+        </div>
+
+        <div class="power-container">
+            <button class="power-btn" id="powerBtn">⏻</button>
+            <div class="status-text" id="statusText">WLAN 未启用旁路由</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>网络诊断</h2>
+                <div class="badge" id="badge">未测试</div>
+            </div>
+
+            <div class="latency-row">
+                <div class="latency-label">GPT 延迟:</div>
+                <div class="latency-value" id="latencyValue">--s</div>
+            </div>
+
+            <div class="progress-track">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+
+            <div class="detail-text" id="detailText">点击测试延迟检查 ChatGPT 访问。</div>
+
+            <button class="test-btn" id="testBtn">测试延迟</button>
+        </div>
+    </div>
+
+    <script>
+        // UI 交互模拟脚本
+        const powerBtn = document.getElementById('powerBtn');
+        const statusText = document.getElementById('statusText');
+        const testBtn = document.getElementById('testBtn');
+        const progressFill = document.getElementById('progressFill');
+        const latencyValue = document.getElementById('latencyValue');
+        const badge = document.getElementById('badge');
+        const detailText = document.getElementById('detailText');
+
+        let isEnabled = false;
+        let isProcessing = false;
+        let loadingInterval;
+
+        // 模拟动画文本
+        function animateText(baseText) {
+            let dots = 0;
+            statusText.textContent = baseText;
+            loadingInterval = setInterval(() => {
+                dots = (dots + 1) % 4;
+                statusText.textContent = baseText + '.'.repeat(dots);
+            }, 500);
+        }
+
+        // 模拟切换网关
+        powerBtn.addEventListener('click', () => {
+            if (isProcessing) return;
+            isProcessing = true;
+            powerBtn.style.opacity = '0.5';
+            testBtn.disabled = true;
+            
+            if (!isEnabled) {
+                animateText("正在配置旁路由");
+                statusText.className = 'status-text active';
+                // 模拟耗时操作 2 秒
+                setTimeout(() => {
+                    clearInterval(loadingInterval);
+                    isEnabled = true;
+                    isProcessing = false;
+                    powerBtn.style.opacity = '1';
+                    powerBtn.classList.add('active');
+                    statusText.textContent = 'WLAN 已切到旁路由';
+                    testBtn.disabled = false;
+                }, 2000);
+            } else {
+                animateText("正在恢复原始网络");
+                statusText.className = 'status-text';
+                setTimeout(() => {
+                    clearInterval(loadingInterval);
+                    isEnabled = false;
+                    isProcessing = false;
+                    powerBtn.style.opacity = '1';
+                    powerBtn.classList.remove('active');
+                    statusText.textContent = 'WLAN 未启用旁路由';
+                    testBtn.disabled = false;
+                }, 2000);
+            }
+        });
+
+        // 模拟延迟测试
+        testBtn.addEventListener('click', () => {
+            testBtn.disabled = true;
+            testBtn.textContent = '测试中...';
+            badge.textContent = '检测中';
+            badge.style.color = 'var(--primary)';
+            latencyValue.textContent = '--s';
+            detailText.textContent = '正在连接 chatgpt.com...';
+            progressFill.style.width = '20%';
+            progressFill.style.backgroundColor = 'var(--primary-dim)';
+
+            setTimeout(() => {
+                testBtn.disabled = false;
+                testBtn.textContent = '测试延迟';
+                latencyValue.textContent = '0.85s';
+                badge.textContent = '连接稳定';
+                badge.style.color = 'var(--success)';
+                detailText.textContent = 'ChatGPT 可达。';
+                progressFill.style.width = '90%';
+                progressFill.style.backgroundColor = 'var(--success)';
+            }, 1500);
+        });
+    </script>
+</body>
+</html>

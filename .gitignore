@@ -16,3 +16,6 @@ Desktop.ini
 .DS_Store
 Program.cs
 archived
+winui3/
+avaloniaui/
+.sisyphus

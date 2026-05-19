@@ -21,6 +21,8 @@
     <!-- Exclude archived files -->
     <Compile Remove="Program.cs" />
     <Compile Remove="archived\**" />
+    <Compile Remove="avaloniaui\**" />
+    <Compile Remove="winui3\**" />
   </ItemGroup>
 
 </Project>
