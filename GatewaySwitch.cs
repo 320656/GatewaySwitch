@@ -26,7 +26,7 @@ namespace YuanxinGateway
 
     internal sealed class MainForm : Form
     {
-        private const string TargetGateway = "192.168.3.187";
+
 
         private readonly Color backgroundColor = Color.FromArgb(16, 19, 26);
         private readonly Color cardColor = Color.FromArgb(29, 32, 39);
@@ -56,12 +56,21 @@ namespace YuanxinGateway
         private readonly NotifyIcon trayIcon;
         private readonly ContextMenuStrip trayMenu;
 
+        private const int BaseClientWidth = 440;
+        private const int BaseClientHeight = 620;
+        private const int BaseProgressWidth = 328;
+
         private bool enabledByApp;
         private bool allowExit;
         private bool isProcessing;
         private System.Windows.Forms.Timer loadingTimer;
         private string loadingBaseText;
         private int loadingDotCount;
+        private bool userManuallyDisabled;
+        private string lastSsid;
+        private float dpiScale = 1F;
+        private int progressDesignWidth;
+        private readonly Button settingsButton;
 
         [DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
@@ -77,9 +86,8 @@ namespace YuanxinGateway
         {
             Text = "元信旁路由";
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(440, 620);
-            MinimumSize = new Size(440, 620);
-            MaximumSize = new Size(440, 620);
+            AutoScaleMode = AutoScaleMode.None;
+            ClientSize = new Size(BaseClientWidth, BaseClientHeight);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             MinimizeBox = true;
@@ -87,6 +95,7 @@ namespace YuanxinGateway
             BackColor = backgroundColor;
             Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
             TrySetAppIcon();
+            SuspendLayout();
 
             trayMenu = new ContextMenuStrip();
             trayMenu.Items.Add("显示主窗口", null, ShowMainWindowMenuItem_Click);
@@ -106,6 +115,18 @@ namespace YuanxinGateway
             titleLabel.ForeColor = primaryColor;
             titleLabel.Location = new Point(28, 24);
             titleLabel.Size = new Size(220, 36);
+            titleLabel.AutoEllipsis = true;
+
+            settingsButton = new Button();
+            settingsButton.FlatStyle = FlatStyle.Flat;
+            settingsButton.FlatAppearance.BorderSize = 0;
+            settingsButton.Font = new Font("Segoe UI Symbol", 16F);
+            settingsButton.Text = "⚙";
+            settingsButton.ForeColor = mutedTextColor;
+            settingsButton.Location = new Point(370, 24);
+            settingsButton.Size = new Size(40, 36);
+            settingsButton.Cursor = Cursors.Hand;
+            settingsButton.Click += SettingsButton_Click;
 
             helperLabel = new Label();
             helperLabel.AutoSize = false;
@@ -114,6 +135,7 @@ namespace YuanxinGateway
             helperLabel.ForeColor = mutedTextColor;
             helperLabel.Location = new Point(30, 58);
             helperLabel.Size = new Size(180, 22);
+            helperLabel.AutoEllipsis = true;
 
             powerButton = new Button();
             powerButton.FlatStyle = FlatStyle.Flat;
@@ -125,6 +147,7 @@ namespace YuanxinGateway
             powerButton.UseVisualStyleBackColor = false;
             powerButton.Cursor = Cursors.Hand;
             powerButton.Click += PowerButton_Click;
+            powerButton.SizeChanged += (sender, args) => ApplyCircleRegion(powerButton);
             ApplyCircleRegion(powerButton);
 
             routeStateLabel = new Label();
@@ -134,13 +157,16 @@ namespace YuanxinGateway
             routeStateLabel.TextAlign = ContentAlignment.MiddleCenter;
             routeStateLabel.Location = new Point(40, 318);
             routeStateLabel.Size = new Size(360, 30);
+            routeStateLabel.AutoEllipsis = true;
 
             cardPanel = new Panel();
             cardPanel.BackColor = cardColor;
             cardPanel.Location = new Point(30, 382);
             cardPanel.Size = new Size(380, 190);
             cardPanel.Paint += CardPanel_Paint;
-            ApplyRoundedRegion(cardPanel, 22);
+            cardPanel.SizeChanged += (sender, args) => ApplyRoundedRegion(cardPanel, ScaleInt(22));
+            ApplyRoundedRegion(cardPanel, ScaleInt(22));
+            cardPanel.SuspendLayout();
 
             cardTitleLabel = new Label();
             cardTitleLabel.AutoSize = false;
@@ -149,6 +175,7 @@ namespace YuanxinGateway
             cardTitleLabel.ForeColor = textColor;
             cardTitleLabel.Location = new Point(22, 20);
             cardTitleLabel.Size = new Size(150, 30);
+            cardTitleLabel.AutoEllipsis = true;
 
             connectionBadgeLabel = new Label();
             connectionBadgeLabel.AutoSize = false;
@@ -159,7 +186,8 @@ namespace YuanxinGateway
             connectionBadgeLabel.BackColor = Color.FromArgb(50, 53, 60);
             connectionBadgeLabel.Location = new Point(264, 22);
             connectionBadgeLabel.Size = new Size(88, 24);
-            ApplyRoundedRegion(connectionBadgeLabel, 12);
+            connectionBadgeLabel.SizeChanged += (sender, args) => ApplyRoundedRegion(connectionBadgeLabel, ScaleInt(12));
+            ApplyRoundedRegion(connectionBadgeLabel, ScaleInt(12));
 
             gatewayCaptionLabel = new Label();
             gatewayCaptionLabel.AutoSize = false;
@@ -168,6 +196,7 @@ namespace YuanxinGateway
             gatewayCaptionLabel.ForeColor = Color.FromArgb(140, 144, 159);
             gatewayCaptionLabel.Location = new Point(24, 66);
             gatewayCaptionLabel.Size = new Size(120, 24);
+            gatewayCaptionLabel.AutoEllipsis = true;
 
             gatewayValueLabel = new Label();
             gatewayValueLabel.AutoSize = false;
@@ -177,18 +206,21 @@ namespace YuanxinGateway
             gatewayValueLabel.TextAlign = ContentAlignment.MiddleRight;
             gatewayValueLabel.Location = new Point(190, 58);
             gatewayValueLabel.Size = new Size(160, 42);
+            gatewayValueLabel.AutoEllipsis = true;
 
             progressTrack = new Panel();
             progressTrack.BackColor = Color.FromArgb(38, 42, 50);
             progressTrack.Location = new Point(24, 104);
             progressTrack.Size = new Size(328, 7);
-            ApplyRoundedRegion(progressTrack, 4);
+            progressTrack.SizeChanged += (sender, args) => ApplyRoundedRegion(progressTrack, ScaleInt(4));
+            ApplyRoundedRegion(progressTrack, ScaleInt(4));
 
             progressFill = new Panel();
             progressFill.BackColor = primaryColor;
             progressFill.Location = new Point(0, 0);
             progressFill.Size = new Size(0, 7);
-            ApplyRoundedRegion(progressFill, 4);
+            progressFill.SizeChanged += (sender, args) => ApplyRoundedRegion(progressFill, ScaleInt(4));
+            ApplyRoundedRegion(progressFill, ScaleInt(4));
             progressTrack.Controls.Add(progressFill);
 
             detailLabel = new Label();
@@ -198,6 +230,7 @@ namespace YuanxinGateway
             detailLabel.ForeColor = mutedTextColor;
             detailLabel.Location = new Point(24, 118);
             detailLabel.Size = new Size(328, 22);
+            detailLabel.AutoEllipsis = true;
 
             testButton = new Button();
             testButton.Text = "测试延迟";
@@ -207,6 +240,7 @@ namespace YuanxinGateway
             testButton.Click += TestButton_Click;
 
             Controls.Add(titleLabel);
+            Controls.Add(settingsButton);
             Controls.Add(helperLabel);
             Controls.Add(powerButton);
             Controls.Add(routeStateLabel);
@@ -218,6 +252,11 @@ namespace YuanxinGateway
             cardPanel.Controls.Add(progressTrack);
             cardPanel.Controls.Add(detailLabel);
             cardPanel.Controls.Add(testButton);
+            testButton.SizeChanged += (sender, args) => ApplyRoundedRegion(testButton, ScaleInt(12));
+            cardPanel.ResumeLayout(false);
+            ResumeLayout(false);
+            ApplyDpiAwareLayout();
+            ReapplyControlRegions();
 
             loadingTimer = new System.Windows.Forms.Timer();
             loadingTimer.Interval = 500;
@@ -228,24 +267,150 @@ namespace YuanxinGateway
             refreshTimer.Tick += RefreshTimer_Tick;
             refreshTimer.Start();
 
-            enabledByApp = GatewayManager.IsTargetActive(TargetGateway);
+            string configIp = GatewayManager.GetConfigGatewayIp();
+            enabledByApp = GatewayManager.IsTargetActive(configIp);
             UpdateRouteVisualState();
         }
 
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
+            ApplyDpiAwareLayout();
             TryUseDarkTitleBar();
             TrySetAppIcon();
+        }
+
+        protected override void OnDpiChanged(DpiChangedEventArgs e)
+        {
+            base.OnDpiChanged(e);
+            ApplyDpiAwareLayout();
+            ReapplyControlRegions();
         }
 
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
+            ReapplyControlRegions();
             if (WindowState == FormWindowState.Minimized)
             {
                 Hide();
             }
+        }
+
+        private void ApplyDpiAwareLayout()
+        {
+            dpiScale = GetCurrentDpiScale();
+            Size clientSize = ScaleSize(BaseClientWidth, BaseClientHeight);
+
+            SuspendLayout();
+            if (cardPanel != null)
+            {
+                cardPanel.SuspendLayout();
+            }
+
+            MinimumSize = Size.Empty;
+            MaximumSize = Size.Empty;
+            ClientSize = clientSize;
+            Size fixedWindowSize = SizeFromClientSize(clientSize);
+            MinimumSize = fixedWindowSize;
+            MaximumSize = fixedWindowSize;
+            Font = UiFont(12F, FontStyle.Regular);
+
+            titleLabel.Font = UiFont(24F, FontStyle.Bold);
+            titleLabel.Location = ScalePoint(28, 22);
+            titleLabel.Size = ScaleSize(270, 40);
+
+            settingsButton.Font = UiFont(22F, FontStyle.Regular, "Segoe UI Symbol");
+            settingsButton.Location = ScalePoint(370, 24);
+            settingsButton.Size = ScaleSize(40, 36);
+
+            helperLabel.Font = UiFont(12F, FontStyle.Bold);
+            helperLabel.Location = ScalePoint(30, 60);
+            helperLabel.Size = ScaleSize(210, 22);
+
+            powerButton.Font = UiFont(72F, FontStyle.Regular, "Segoe UI Symbol");
+            powerButton.Location = ScalePoint(130, 122);
+            powerButton.Size = ScaleSize(180, 180);
+
+            routeStateLabel.Font = UiFont(15F, FontStyle.Bold);
+            routeStateLabel.Location = ScalePoint(40, 318);
+            routeStateLabel.Size = ScaleSize(360, 32);
+
+            cardPanel.Location = ScalePoint(30, 382);
+            cardPanel.Size = ScaleSize(380, 190);
+
+            cardTitleLabel.Font = UiFont(20F, FontStyle.Bold);
+            cardTitleLabel.Location = ScalePoint(22, 18);
+            cardTitleLabel.Size = ScaleSize(170, 34);
+
+            connectionBadgeLabel.Font = UiFont(11F, FontStyle.Bold);
+            connectionBadgeLabel.Location = ScalePoint(264, 21);
+            connectionBadgeLabel.Size = ScaleSize(88, 26);
+
+            gatewayCaptionLabel.Font = UiFont(14F, FontStyle.Bold);
+            gatewayCaptionLabel.Location = ScalePoint(24, 66);
+            gatewayCaptionLabel.Size = ScaleSize(130, 26);
+
+            gatewayValueLabel.Font = UiFont(28F, FontStyle.Bold);
+            gatewayValueLabel.Location = ScalePoint(176, 54);
+            gatewayValueLabel.Size = ScaleSize(176, 48);
+
+            progressTrack.Location = ScalePoint(24, 106);
+            progressTrack.Size = ScaleSize(BaseProgressWidth, 7);
+
+            detailLabel.Font = UiFont(11F, FontStyle.Regular);
+            detailLabel.Location = ScalePoint(24, 121);
+            detailLabel.Size = ScaleSize(BaseProgressWidth, 22);
+
+            testButton.Font = UiFont(12F, FontStyle.Bold);
+            testButton.Location = ScalePoint(24, 148);
+            testButton.Size = ScaleSize(BaseProgressWidth, 36);
+
+            ApplyProgressWidth();
+
+            if (cardPanel != null)
+            {
+                cardPanel.ResumeLayout(false);
+                cardPanel.Invalidate();
+            }
+            ResumeLayout(false);
+            ReapplyControlRegions();
+            Invalidate();
+        }
+
+        private float GetCurrentDpiScale()
+        {
+            try
+            {
+                using (Graphics graphics = IsHandleCreated ? CreateGraphics() : Graphics.FromHwnd(IntPtr.Zero))
+                {
+                    return Math.Max(1F, graphics.DpiX / 96F);
+                }
+            }
+            catch
+            {
+                return 1F;
+            }
+        }
+
+        private int ScaleInt(int value)
+        {
+            return (int)Math.Round(value * dpiScale);
+        }
+
+        private Point ScalePoint(int x, int y)
+        {
+            return new Point(ScaleInt(x), ScaleInt(y));
+        }
+
+        private Size ScaleSize(int width, int height)
+        {
+            return new Size(Math.Max(1, ScaleInt(width)), Math.Max(1, ScaleInt(height)));
+        }
+
+        private Font UiFont(float pixelSize, FontStyle style, string family = "Microsoft YaHei UI")
+        {
+            return new Font(family, Math.Max(1F, pixelSize * dpiScale), style, GraphicsUnit.Pixel);
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -271,8 +436,8 @@ namespace YuanxinGateway
             using (SolidBrush warmGlow = new SolidBrush(Color.FromArgb(14, 255, 183, 134)))
             {
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                e.Graphics.FillEllipse(blueGlow, 285, -75, 230, 230);
-                e.Graphics.FillEllipse(warmGlow, -95, 455, 250, 250);
+                e.Graphics.FillEllipse(blueGlow, ScaleInt(285), -ScaleInt(75), ScaleInt(230), ScaleInt(230));
+                e.Graphics.FillEllipse(warmGlow, -ScaleInt(95), ScaleInt(455), ScaleInt(250), ScaleInt(250));
             }
         }
 
@@ -308,10 +473,12 @@ namespace YuanxinGateway
 
             if (enabledByApp)
             {
+                userManuallyDisabled = true;
                 await RestoreWifiAsync();
             }
             else
             {
+                userManuallyDisabled = false;
                 await EnableGatewayAsync();
             }
         }
@@ -321,7 +488,8 @@ namespace YuanxinGateway
             try
             {
                 StartLoading("正在配置旁路由");
-                await System.Threading.Tasks.Task.Run(() => GatewayManager.Enable(TargetGateway));
+                string configIp = GatewayManager.GetConfigGatewayIp();
+                await System.Threading.Tasks.Task.Run(() => GatewayManager.Enable(configIp));
                 enabledByApp = true;
                 StopLoading();
                 UpdateRouteVisualState();
@@ -331,7 +499,8 @@ namespace YuanxinGateway
             {
                 StopLoading();
                 MessageBox.Show(this, "配置旁路由失败：" + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                enabledByApp = GatewayManager.IsTargetActive(TargetGateway);
+                string configIp = GatewayManager.GetConfigGatewayIp();
+                enabledByApp = GatewayManager.IsTargetActive(configIp);
                 UpdateRouteVisualState();
             }
         }
@@ -341,7 +510,8 @@ namespace YuanxinGateway
             try
             {
                 StartLoading("正在恢复原始网络");
-                await System.Threading.Tasks.Task.Run(() => GatewayManager.Restore(TargetGateway));
+                string configIp = GatewayManager.GetConfigGatewayIp();
+                await System.Threading.Tasks.Task.Run(() => GatewayManager.Restore(configIp));
                 enabledByApp = false;
                 StopLoading();
                 UpdateRouteVisualState();
@@ -350,7 +520,8 @@ namespace YuanxinGateway
             {
                 StopLoading();
                 MessageBox.Show(this, "恢复 Wi-Fi 配置失败：" + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                enabledByApp = GatewayManager.IsTargetActive(TargetGateway);
+                string configIp = GatewayManager.GetConfigGatewayIp();
+                enabledByApp = GatewayManager.IsTargetActive(configIp);
                 UpdateRouteVisualState();
             }
         }
@@ -382,20 +553,66 @@ namespace YuanxinGateway
             });
         }
 
-        private void RefreshTimer_Tick(object sender, EventArgs e)
+        private void SettingsButton_Click(object sender, EventArgs e)
         {
-            bool active = GatewayManager.IsTargetActive(TargetGateway);
+            using (SettingsForm sf = new SettingsForm())
+            {
+                if (sf.ShowDialog(this) == DialogResult.OK)
+                {
+                    UpdateRouteVisualState();
+                }
+            }
+        }
+
+        private async void RefreshTimer_Tick(object sender, EventArgs e)
+        {
+            if (isProcessing) return;
+
+            string configIp = GatewayManager.GetConfigGatewayIp();
+            string configSsid = GatewayManager.GetConfigSsid();
+            bool autoEnable = GatewayManager.GetConfigAutoEnable();
+
+            bool active = GatewayManager.IsTargetActive(configIp);
             if (active != enabledByApp)
             {
                 enabledByApp = active;
                 UpdateRouteVisualState();
             }
+
+            // SSID Auto-switch logic
+            string currentSsid = GatewayManager.GetActiveWifiSsid();
+            if (currentSsid != lastSsid)
+            {
+                userManuallyDisabled = false;
+                lastSsid = currentSsid;
+            }
+
+            if (!string.IsNullOrEmpty(configSsid))
+            {
+                if (enabledByApp)
+                {
+                    if (currentSsid != configSsid)
+                    {
+                        await RestoreWifiAsync();
+                        trayIcon.ShowBalloonTip(3000, "旁路由助手", "当前连接的 Wi-Fi (" + (string.IsNullOrEmpty(currentSsid) ? "有线/无无线连接" : currentSsid) + ") 未配置旁路由，已自动恢复默认网络。", ToolTipIcon.Info);
+                    }
+                }
+                else
+                {
+                    if (currentSsid == configSsid && autoEnable && !userManuallyDisabled)
+                    {
+                        await EnableGatewayAsync();
+                        trayIcon.ShowBalloonTip(3000, "旁路由助手", "已连接到指定 Wi-Fi，已自动启用旁路由。", ToolTipIcon.Info);
+                    }
+                }
+            }
         }
 
         private void UpdateRouteVisualState()
         {
-            WifiConfig current = GatewayManager.GetCurrentWifiConfig();
-            string alias = current == null ? "未检测到 Wi-Fi" : current.InterfaceAlias;
+            WifiConfig current = GatewayManager.GetCurrentNetworkConfig();
+            string typeStr = current == null ? "网络" : (current.IsWifi ? "Wi-Fi" : "以太网");
+            string alias = current == null ? "未检测到活动连接" : current.InterfaceAlias;
 
             if (enabledByApp)
             {
@@ -459,14 +676,64 @@ namespace YuanxinGateway
             {
                 width = 0;
             }
+            if (width > BaseProgressWidth)
+            {
+                width = BaseProgressWidth;
+            }
+
+            progressDesignWidth = width;
+            progressFill.BackColor = color;
+            ApplyProgressWidth();
+        }
+
+        private void ApplyProgressWidth()
+        {
+            if (progressTrack == null || progressFill == null)
+            {
+                return;
+            }
+
+            int width = (int)Math.Round(progressTrack.Width * (progressDesignWidth / (double)BaseProgressWidth));
+            if (width < 0)
+            {
+                width = 0;
+            }
             if (width > progressTrack.Width)
             {
                 width = progressTrack.Width;
             }
 
-            progressFill.Width = width;
-            progressFill.BackColor = color;
-            ApplyRoundedRegion(progressFill, 4);
+            progressFill.Location = Point.Empty;
+            progressFill.Size = new Size(width, progressTrack.Height);
+            ApplyRoundedRegion(progressFill, ScaleInt(4));
+        }
+
+        private void ReapplyControlRegions()
+        {
+            if (powerButton != null)
+            {
+                ApplyCircleRegion(powerButton);
+            }
+            if (cardPanel != null)
+            {
+                ApplyRoundedRegion(cardPanel, ScaleInt(22));
+            }
+            if (connectionBadgeLabel != null)
+            {
+                ApplyRoundedRegion(connectionBadgeLabel, ScaleInt(12));
+            }
+            if (progressTrack != null)
+            {
+                ApplyRoundedRegion(progressTrack, ScaleInt(4));
+            }
+            if (progressFill != null)
+            {
+                ApplyRoundedRegion(progressFill, ScaleInt(4));
+            }
+            if (testButton != null)
+            {
+                ApplyRoundedRegion(testButton, ScaleInt(12));
+            }
         }
 
         private void StylePrimaryButton(Button button)
@@ -478,14 +745,14 @@ namespace YuanxinGateway
             button.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
             button.UseVisualStyleBackColor = false;
             button.Cursor = Cursors.Hand;
-            ApplyRoundedRegion(button, 12);
+            ApplyRoundedRegion(button, ScaleInt(12));
         }
 
         private void CardPanel_Paint(object sender, PaintEventArgs e)
         {
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             using (Pen border = new Pen(cardBorderColor))
-            using (GraphicsPath path = RoundedPath(new Rectangle(0, 0, cardPanel.Width - 1, cardPanel.Height - 1), 22))
+            using (GraphicsPath path = RoundedPath(new Rectangle(0, 0, cardPanel.Width - 1, cardPanel.Height - 1), ScaleInt(22)))
             {
                 e.Graphics.DrawPath(border, path);
             }
@@ -562,6 +829,12 @@ namespace YuanxinGateway
 
         private static void ApplyCircleRegion(Control control)
         {
+            if (control.Width <= 0 || control.Height <= 0)
+            {
+                control.Region = null;
+                return;
+            }
+
             using (GraphicsPath path = new GraphicsPath())
             {
                 path.AddEllipse(0, 0, control.Width, control.Height);
@@ -571,7 +844,20 @@ namespace YuanxinGateway
 
         private static void ApplyRoundedRegion(Control control, int radius)
         {
-            using (GraphicsPath path = RoundedPath(new Rectangle(0, 0, control.Width, control.Height), radius))
+            if (control.Width <= 0 || control.Height <= 0)
+            {
+                control.Region = null;
+                return;
+            }
+
+            int safeRadius = Math.Min(radius, Math.Min(control.Width, control.Height) / 2);
+            if (safeRadius <= 0)
+            {
+                control.Region = null;
+                return;
+            }
+
+            using (GraphicsPath path = RoundedPath(new Rectangle(0, 0, control.Width, control.Height), safeRadius))
             {
                 control.Region = new Region(path);
             }
@@ -579,8 +865,16 @@ namespace YuanxinGateway
 
         private static GraphicsPath RoundedPath(Rectangle bounds, int radius)
         {
+            int safeRadius = Math.Min(radius, Math.Min(bounds.Width, bounds.Height) / 2);
             int diameter = radius * 2;
             GraphicsPath path = new GraphicsPath();
+            if (safeRadius <= 0)
+            {
+                path.AddRectangle(bounds);
+                return path;
+            }
+
+            diameter = safeRadius * 2;
             path.AddArc(bounds.X, bounds.Y, diameter, diameter, 180, 90);
             path.AddArc(bounds.Right - diameter, bounds.Y, diameter, diameter, 270, 90);
             path.AddArc(bounds.Right - diameter, bounds.Bottom - diameter, diameter, diameter, 0, 90);
@@ -598,17 +892,306 @@ namespace YuanxinGateway
         public string Gateway;
         public List<string> DnsServers = new List<string>();
         public bool IsDnsDhcp;
+        public bool IsWifi;
+    }
+
+    internal sealed class SettingsForm : Form
+    {
+        private const int BaseWindowWidth = 380;
+        private const int BaseWindowHeight = 320;
+
+        private readonly Color backgroundColor = Color.FromArgb(16, 19, 26);
+        private readonly Color cardColor = Color.FromArgb(29, 32, 39);
+        private readonly Color cardBorderColor = Color.FromArgb(66, 71, 84);
+        private readonly Color primaryColor = Color.FromArgb(173, 198, 255);
+        private readonly Color textColor = Color.FromArgb(225, 226, 236);
+        private readonly Color mutedTextColor = Color.FromArgb(194, 198, 214);
+
+        private readonly Label lblIp;
+        private readonly TextBox txtIp;
+        private readonly Label lblSsid;
+        private readonly TextBox txtSsid;
+        private readonly Button btnGetSsid;
+        private readonly CheckBox chkAutoEnable;
+        private readonly Button btnSave;
+        private readonly Button btnCancel;
+        private float dpiScale = 1F;
+
+        public SettingsForm()
+        {
+            Text = "设置";
+            AutoScaleMode = AutoScaleMode.None;
+            Size = new Size(BaseWindowWidth, BaseWindowHeight);
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            StartPosition = FormStartPosition.CenterParent;
+            BackColor = backgroundColor;
+            ForeColor = textColor;
+            Font = new Font("Microsoft YaHei UI", 9F);
+            SuspendLayout();
+
+            lblIp = new Label { Text = "旁路由 IP 地址:", Location = new Point(25, 25), Size = new Size(200, 20), ForeColor = mutedTextColor };
+            txtIp = new TextBox { Text = GatewayManager.GetConfigGatewayIp(), Location = new Point(25, 50), Size = new Size(310, 25), BackColor = cardColor, ForeColor = textColor, BorderStyle = BorderStyle.FixedSingle };
+
+            lblSsid = new Label { Text = "绑定 Wi-Fi SSID (留空表示不限制):", Location = new Point(25, 90), Size = new Size(250, 20), ForeColor = mutedTextColor };
+            txtSsid = new TextBox { Text = GatewayManager.GetConfigSsid(), Location = new Point(25, 115), Size = new Size(210, 25), BackColor = cardColor, ForeColor = textColor, BorderStyle = BorderStyle.FixedSingle };
+            
+            btnGetSsid = new Button { Text = "获取当前", Location = new Point(245, 114), Size = new Size(90, 26), FlatStyle = FlatStyle.Flat, BackColor = cardColor, ForeColor = primaryColor };
+            btnGetSsid.FlatAppearance.BorderColor = cardBorderColor;
+            btnGetSsid.Click += BtnGetSsid_Click;
+
+            chkAutoEnable = new CheckBox { Text = "连上该 Wi-Fi 时自动启用旁路由", Checked = GatewayManager.GetConfigAutoEnable(), Location = new Point(25, 160), Size = new Size(310, 25), ForeColor = textColor };
+
+            btnSave = new Button { Text = "保存", Location = new Point(145, 220), Size = new Size(90, 35), FlatStyle = FlatStyle.Flat, BackColor = primaryColor, ForeColor = Color.FromArgb(0, 46, 106) };
+            btnSave.FlatAppearance.BorderSize = 0;
+            btnSave.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
+            btnSave.Click += BtnSave_Click;
+
+            btnCancel = new Button { Text = "取消", Location = new Point(245, 220), Size = new Size(90, 35), FlatStyle = FlatStyle.Flat, BackColor = cardColor, ForeColor = mutedTextColor };
+            btnCancel.FlatAppearance.BorderColor = cardBorderColor;
+            btnCancel.Click += (s, e) => Close();
+
+            Controls.Add(lblIp);
+            Controls.Add(txtIp);
+            Controls.Add(lblSsid);
+            Controls.Add(txtSsid);
+            Controls.Add(btnGetSsid);
+            Controls.Add(chkAutoEnable);
+            Controls.Add(btnSave);
+            Controls.Add(btnCancel);
+            ResumeLayout(false);
+            ApplyDpiAwareLayout();
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            ApplyDpiAwareLayout();
+        }
+
+        protected override void OnDpiChanged(DpiChangedEventArgs e)
+        {
+            base.OnDpiChanged(e);
+            ApplyDpiAwareLayout();
+        }
+
+        private void ApplyDpiAwareLayout()
+        {
+            dpiScale = GetCurrentDpiScale();
+            Size scaledWindowSize = ScaleSize(BaseWindowWidth, BaseWindowHeight);
+
+            SuspendLayout();
+            MinimumSize = Size.Empty;
+            MaximumSize = Size.Empty;
+            Size = scaledWindowSize;
+            MinimumSize = scaledWindowSize;
+            MaximumSize = scaledWindowSize;
+            Font = UiFont(12F, FontStyle.Regular);
+
+            lblIp.Font = UiFont(12F, FontStyle.Regular);
+            lblIp.Location = ScalePoint(25, 25);
+            lblIp.Size = ScaleSize(220, 22);
+
+            txtIp.Font = UiFont(12F, FontStyle.Regular);
+            txtIp.Location = ScalePoint(25, 50);
+            txtIp.Size = ScaleSize(310, 26);
+
+            lblSsid.Font = UiFont(12F, FontStyle.Regular);
+            lblSsid.Location = ScalePoint(25, 90);
+            lblSsid.Size = ScaleSize(280, 22);
+
+            txtSsid.Font = UiFont(12F, FontStyle.Regular);
+            txtSsid.Location = ScalePoint(25, 115);
+            txtSsid.Size = ScaleSize(210, 26);
+
+            btnGetSsid.Font = UiFont(12F, FontStyle.Regular);
+            btnGetSsid.Location = ScalePoint(245, 114);
+            btnGetSsid.Size = ScaleSize(90, 28);
+
+            chkAutoEnable.Font = UiFont(12F, FontStyle.Regular);
+            chkAutoEnable.Location = ScalePoint(25, 160);
+            chkAutoEnable.Size = ScaleSize(310, 28);
+
+            btnSave.Font = UiFont(12F, FontStyle.Bold);
+            btnSave.Location = ScalePoint(145, 220);
+            btnSave.Size = ScaleSize(90, 36);
+
+            btnCancel.Font = UiFont(12F, FontStyle.Regular);
+            btnCancel.Location = ScalePoint(245, 220);
+            btnCancel.Size = ScaleSize(90, 36);
+
+            ResumeLayout(false);
+        }
+
+        private float GetCurrentDpiScale()
+        {
+            try
+            {
+                using (Graphics graphics = IsHandleCreated ? CreateGraphics() : Graphics.FromHwnd(IntPtr.Zero))
+                {
+                    return Math.Max(1F, graphics.DpiX / 96F);
+                }
+            }
+            catch
+            {
+                return 1F;
+            }
+        }
+
+        private int ScaleInt(int value)
+        {
+            return (int)Math.Round(value * dpiScale);
+        }
+
+        private Point ScalePoint(int x, int y)
+        {
+            return new Point(ScaleInt(x), ScaleInt(y));
+        }
+
+        private Size ScaleSize(int width, int height)
+        {
+            return new Size(Math.Max(1, ScaleInt(width)), Math.Max(1, ScaleInt(height)));
+        }
+
+        private Font UiFont(float pixelSize, FontStyle style, string family = "Microsoft YaHei UI")
+        {
+            return new Font(family, Math.Max(1F, pixelSize * dpiScale), style, GraphicsUnit.Pixel);
+        }
+
+        private void BtnGetSsid_Click(object sender, EventArgs e)
+        {
+            string ssid = GatewayManager.GetActiveWifiSsid();
+            if (string.IsNullOrEmpty(ssid))
+            {
+                MessageBox.Show(this, "未能检测到已连接的 Wi-Fi。请确认已开启 Wi-Fi 并连入网络。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            else
+            {
+                txtSsid.Text = ssid;
+            }
+        }
+
+        private void BtnSave_Click(object sender, EventArgs e)
+        {
+            string ip = txtIp.Text.Trim();
+            if (string.IsNullOrEmpty(ip) || !System.Net.IPAddress.TryParse(ip, out _))
+            {
+                MessageBox.Show(this, "请输入有效的旁路由 IP 地址！", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            GatewayManager.SaveSettings(ip, txtSsid.Text.Trim(), chkAutoEnable.Checked);
+            DialogResult = DialogResult.OK;
+            Close();
+        }
     }
 
     internal static class GatewayManager
     {
         private const string RegistryPath = "Software\\YuanxinGatewaySwitch";
 
-        public static WifiConfig GetCurrentWifiConfig()
+        public static string GetActiveWifiSsid()
+        {
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo
+                {
+                    FileName = "netsh.exe",
+                    Arguments = "wlan show interfaces",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    CreateNoWindow = true
+                };
+                using (Process p = Process.Start(psi))
+                {
+                    string output = p.StandardOutput.ReadToEnd();
+                    p.WaitForExit();
+                    string[] lines = output.Split(new[] { "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (string line in lines)
+                    {
+                        string trimmed = line.Trim();
+                        if (trimmed.StartsWith("SSID", StringComparison.OrdinalIgnoreCase) && !trimmed.Contains("BSSID"))
+                        {
+                            int idx = trimmed.IndexOf(':');
+                            if (idx >= 0)
+                            {
+                                return trimmed.Substring(idx + 1).Trim();
+                            }
+                        }
+                    }
+                }
+            }
+            catch {}
+            return string.Empty;
+        }
+
+        public static string GetConfigGatewayIp()
+        {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegistryPath, false))
+            {
+                if (key != null)
+                {
+                    return Convert.ToString(key.GetValue("ConfigGatewayIp", "192.168.3.187"));
+                }
+            }
+            return "192.168.3.187";
+        }
+
+        public static string GetConfigSsid()
+        {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegistryPath, false))
+            {
+                if (key != null)
+                {
+                    return Convert.ToString(key.GetValue("ConfigSsid", ""));
+                }
+            }
+            return "";
+        }
+
+        public static bool GetConfigAutoEnable()
+        {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegistryPath, false))
+            {
+                if (key != null)
+                {
+                    return Convert.ToInt32(key.GetValue("ConfigAutoEnable", 1)) == 1;
+                }
+            }
+            return true;
+        }
+
+        public static void SaveSettings(string ip, string ssid, bool autoEnable)
+        {
+            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(RegistryPath))
+            {
+                key.SetValue("ConfigGatewayIp", ip ?? string.Empty, RegistryValueKind.String);
+                key.SetValue("ConfigSsid", ssid ?? string.Empty, RegistryValueKind.String);
+                key.SetValue("ConfigAutoEnable", autoEnable ? 1 : 0, RegistryValueKind.DWord);
+            }
+        }
+
+        public static WifiConfig GetCurrentNetworkConfig()
         {
             foreach (NetworkInterface item in NetworkInterface.GetAllNetworkInterfaces())
             {
-                if (item.NetworkInterfaceType != NetworkInterfaceType.Wireless80211 || item.OperationalStatus != OperationalStatus.Up)
+                if (item.OperationalStatus != OperationalStatus.Up)
+                {
+                    continue;
+                }
+
+                if (item.NetworkInterfaceType != NetworkInterfaceType.Wireless80211 && 
+                    item.NetworkInterfaceType != NetworkInterfaceType.Ethernet)
+                {
+                    continue;
+                }
+
+                // Filter virtual adapters
+                string desc = item.Description.ToLower();
+                if (desc.Contains("virtual") || desc.Contains("pseudo") || desc.Contains("loopback") || 
+                    desc.Contains("hyper-v") || desc.Contains("wsl") || desc.Contains("vmware") || 
+                    desc.Contains("virtualbox") || desc.Contains("vpn"))
                 {
                     continue;
                 }
@@ -639,6 +1222,7 @@ namespace YuanxinGateway
                 config.InterfaceAlias = item.Name;
                 config.InterfaceIndex = ipv4Props.Index;
                 config.IPv4Address = address;
+                config.IsWifi = item.NetworkInterfaceType == NetworkInterfaceType.Wireless80211;
 
                 using (RegistryKey key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\" + item.Id))
                 {
@@ -674,7 +1258,7 @@ namespace YuanxinGateway
 
         public static bool IsTargetActive(string targetGateway)
         {
-            WifiConfig current = GetCurrentWifiConfig();
+            WifiConfig current = GetCurrentNetworkConfig();
             if (current == null)
             {
                 return false;
@@ -687,10 +1271,10 @@ namespace YuanxinGateway
 
         public static void Enable(string targetGateway)
         {
-            WifiConfig current = GetCurrentWifiConfig();
+            WifiConfig current = GetCurrentNetworkConfig();
             if (current == null)
             {
-                throw new InvalidOperationException("没有检测到已连接的 Wi-Fi。");
+                throw new InvalidOperationException("没有检测到已连接的网络适配器。");
             }
 
             SaveOriginal(current);
@@ -706,11 +1290,11 @@ namespace YuanxinGateway
         public static void Restore(string targetGateway)
         {
             OriginalConfig original = LoadOriginal();
-            WifiConfig current = GetCurrentWifiConfig();
+            WifiConfig current = GetCurrentNetworkConfig();
             int index = original.InterfaceIndex > 0 ? original.InterfaceIndex : (current == null ? 0 : current.InterfaceIndex);
             if (index <= 0)
             {
-                throw new InvalidOperationException("没有可恢复的 Wi-Fi 接口信息。");
+                throw new InvalidOperationException("没有可恢复的网卡接口信息。");
             }
 
             string command = "$idx=" + index + ";"
@@ -742,7 +1326,7 @@ namespace YuanxinGateway
 
         private static void SaveOriginal(WifiConfig config)
         {
-            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(RegistryPath))
+            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(RegistryPath + "\\Original"))
             {
                 key.SetValue("InterfaceAlias", config.InterfaceAlias ?? string.Empty, RegistryValueKind.String);
                 key.SetValue("InterfaceIndex", config.InterfaceIndex, RegistryValueKind.DWord);
@@ -755,7 +1339,7 @@ namespace YuanxinGateway
         private static OriginalConfig LoadOriginal()
         {
             OriginalConfig config = new OriginalConfig();
-            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegistryPath, false))
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegistryPath + "\\Original", false))
             {
                 if (key == null)
                 {
@@ -776,7 +1360,17 @@ namespace YuanxinGateway
 
         private static void ClearOriginal()
         {
-            Registry.CurrentUser.DeleteSubKeyTree(RegistryPath, false);
+            try
+            {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegistryPath, true))
+                {
+                    if (key != null)
+                    {
+                        key.DeleteSubKeyTree("Original", false);
+                    }
+                }
+            }
+            catch {}
         }
 
         private static void RunPowerShell(string command)
