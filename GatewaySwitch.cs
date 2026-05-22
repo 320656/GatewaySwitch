@@ -72,6 +72,8 @@ namespace YuanxinGateway
         private const int BaseClientWidth = 440;
         private const int BaseClientHeight = 620;
         private const int BaseProgressWidth = 328;
+        private const int ReferenceScreenWidth = 1920;
+        private const int ReferenceScreenHeight = 1080;
 
         private bool enabledByApp;
         private bool allowExit;
@@ -397,10 +399,43 @@ namespace YuanxinGateway
         {
             try
             {
+                float dpiRatio;
                 using (Graphics graphics = IsHandleCreated ? CreateGraphics() : Graphics.FromHwnd(IntPtr.Zero))
                 {
-                    return Math.Max(1F, graphics.DpiX / 96F);
+                    dpiRatio = graphics.DpiX / 96F;
                 }
+
+                // Use the screen work area to compute a proportion-based scale.
+                // The design baseline is 1080p (1920x1080 logical pixels at 96dpi).
+                // On screens with higher logical resolution (e.g. 4K at 100%/125% DPI),
+                // the window must grow proportionally so it occupies the same
+                // percentage of the screen regardless of resolution.
+                Rectangle workArea;
+                try
+                {
+                    Screen currentScreen = IsHandleCreated
+                        ? Screen.FromHandle(Handle)
+                        : Screen.PrimaryScreen;
+                    workArea = currentScreen.WorkingArea;
+                }
+                catch
+                {
+                    workArea = Screen.PrimaryScreen.WorkingArea;
+                }
+
+                // WorkingArea is in physical pixels when PerMonitorV2 is declared.
+                // Divide by dpiRatio to get logical pixel dimensions, then compute
+                // how the logical screen compares to the 1080p reference.
+                float logicalWidth = workArea.Width / dpiRatio;
+                float logicalHeight = workArea.Height / dpiRatio;
+
+                float scaleByWidth = logicalWidth / ReferenceScreenWidth;
+                float scaleByHeight = logicalHeight / ReferenceScreenHeight;
+                float screenRatio = Math.Min(scaleByWidth, scaleByHeight);
+
+                // Final scale = dpiRatio (to get physical pixels) * screenRatio
+                // (to maintain screen proportion). Clamp to at least 1.
+                return Math.Max(1F, dpiRatio * screenRatio);
             }
             catch
             {
@@ -940,6 +975,8 @@ namespace YuanxinGateway
     {
         private const int BaseWindowWidth = 380;
         private const int BaseWindowHeight = 370;
+        private const int ReferenceScreenWidth = 1920;
+        private const int ReferenceScreenHeight = 1080;
 
         private readonly Color backgroundColor = Color.FromArgb(16, 19, 26);
         private readonly Color cardColor = Color.FromArgb(29, 32, 39);
@@ -1084,10 +1121,33 @@ namespace YuanxinGateway
         {
             try
             {
+                float dpiRatio;
                 using (Graphics graphics = IsHandleCreated ? CreateGraphics() : Graphics.FromHwnd(IntPtr.Zero))
                 {
-                    return Math.Max(1F, graphics.DpiX / 96F);
+                    dpiRatio = graphics.DpiX / 96F;
                 }
+
+                Rectangle workArea;
+                try
+                {
+                    Screen currentScreen = IsHandleCreated
+                        ? Screen.FromHandle(Handle)
+                        : (Owner != null ? Screen.FromHandle(Owner.Handle) : Screen.PrimaryScreen);
+                    workArea = currentScreen.WorkingArea;
+                }
+                catch
+                {
+                    workArea = Screen.PrimaryScreen.WorkingArea;
+                }
+
+                float logicalWidth = workArea.Width / dpiRatio;
+                float logicalHeight = workArea.Height / dpiRatio;
+
+                float scaleByWidth = logicalWidth / ReferenceScreenWidth;
+                float scaleByHeight = logicalHeight / ReferenceScreenHeight;
+                float screenRatio = Math.Min(scaleByWidth, scaleByHeight);
+
+                return Math.Max(1F, dpiRatio * screenRatio);
             }
             catch
             {
