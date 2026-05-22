@@ -16,12 +16,24 @@ namespace YuanxinGateway
 {
     internal static class Program
     {
+        private const string SingleInstanceMutexName = "YuanxinGateway.SingleInstance";
+
         [STAThread]
         private static void Main()
         {
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new MainForm());
+            bool createdNew;
+            using (Mutex instanceMutex = new Mutex(true, SingleInstanceMutexName, out createdNew))
+            {
+                if (!createdNew)
+                {
+                    MainForm.SignalExistingInstance();
+                    return;
+                }
+
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                Application.Run(new MainForm());
+            }
         }
     }
 
@@ -82,6 +94,8 @@ namespace YuanxinGateway
         private const int WM_SETICON = 0x0080;
         private static readonly IntPtr IconSmall = new IntPtr(0);
         private static readonly IntPtr IconBig = new IntPtr(1);
+        private static readonly int ShowExistingInstanceMessage = RegisterWindowMessage("YuanxinGateway.ShowExistingInstance");
+        private static readonly IntPtr HwndBroadcast = new IntPtr(0xffff);
 
         public MainForm()
         {
@@ -442,6 +456,17 @@ namespace YuanxinGateway
             }
         }
 
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == ShowExistingInstanceMessage)
+            {
+                RestoreFromTray();
+                return;
+            }
+
+            base.WndProc(ref m);
+        }
+
         private void LoadingTimer_Tick(object sender, EventArgs e)
         {
             loadingDotCount = (loadingDotCount + 1) % 4;
@@ -796,7 +821,13 @@ namespace YuanxinGateway
                 WindowState = FormWindowState.Normal;
             }
 
+            BringToFront();
             Activate();
+        }
+
+        public static void SignalExistingInstance()
+        {
+            PostMessage(HwndBroadcast, ShowExistingInstanceMessage, IntPtr.Zero, IntPtr.Zero);
         }
 
         private void TrayIcon_DoubleClick(object sender, EventArgs e)
@@ -814,6 +845,12 @@ namespace YuanxinGateway
             allowExit = true;
             Close();
         }
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern int RegisterWindowMessage(string lpString);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
         private void TryUseDarkTitleBar()
         {
@@ -1442,7 +1479,7 @@ namespace YuanxinGateway
                 + "$ErrorActionPreference='Stop';"
                 + PowerShellNormalizeFunction()
                 + PowerShellDnsFunction()
-                + "foreach($store in @('ActiveStore','PersistentStore')){Get-NetRoute -PolicyStore $store -InterfaceIndex $idx -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue;}"
+                + "foreach($store in @('ActiveStore','PersistentStore')){Get-NetRoute -PolicyStore $store -InterfaceIndex $idx -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Where-Object { $_.NextHop -eq $gw } | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue;}"
                 + "New-NetRoute -InterfaceIndex $idx -DestinationPrefix '0.0.0.0/0' -NextHop $gw -RouteMetric 1 -PolicyStore ActiveStore -ErrorAction Stop;"
                 + "New-NetRoute -InterfaceIndex $idx -DestinationPrefix '0.0.0.0/0' -NextHop $gw -RouteMetric 1 -PolicyStore PersistentStore -ErrorAction SilentlyContinue;";
 
@@ -1452,7 +1489,7 @@ namespace YuanxinGateway
                 command += "$gw6='" + gw6 + "';"
                     + "$gw6Scoped=Add-ScopeIfNeeded $gw6 $idx;"
                     + "$gw6Norm=Normalize-Address $gw6;"
-                    + "foreach($store in @('ActiveStore','PersistentStore')){Get-NetRoute -PolicyStore $store -InterfaceIndex $idx -DestinationPrefix '::/0' -ErrorAction SilentlyContinue | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue;}"
+                    + "foreach($store in @('ActiveStore','PersistentStore')){Get-NetRoute -PolicyStore $store -InterfaceIndex $idx -DestinationPrefix '::/0' -ErrorAction SilentlyContinue | Where-Object { (Normalize-Address $_.NextHop) -eq $gw6Norm } | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue;}"
                     + "try{New-NetRoute -InterfaceIndex $idx -DestinationPrefix '::/0' -NextHop $gw6 -RouteMetric 1 -PolicyStore ActiveStore -ErrorAction Stop;}catch{New-NetRoute -InterfaceIndex $idx -DestinationPrefix '::/0' -NextHop $gw6Scoped -RouteMetric 1 -PolicyStore ActiveStore -ErrorAction Stop;}"
                     + "try{New-NetRoute -InterfaceIndex $idx -DestinationPrefix '::/0' -NextHop $gw6 -RouteMetric 1 -PolicyStore PersistentStore -ErrorAction SilentlyContinue;}catch{New-NetRoute -InterfaceIndex $idx -DestinationPrefix '::/0' -NextHop $gw6Scoped -RouteMetric 1 -PolicyStore PersistentStore -ErrorAction SilentlyContinue;}"
                     + "Set-StaticDns $idx @($gw) @($gw6);";
@@ -1484,6 +1521,7 @@ namespace YuanxinGateway
             string command = "$idx=" + index + ";"
                 + "$target='" + EscapePowerShell(targetGateway) + "';"
                 + PowerShellNormalizeFunction()
+                + PowerShellDnsFunction()
                 + "foreach($store in @('ActiveStore','PersistentStore')){Get-NetRoute -PolicyStore $store -InterfaceIndex $idx -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Where-Object { $_.NextHop -eq $target } | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue;}";
 
             if (!string.IsNullOrEmpty(targetGatewayIpv6))
@@ -1512,7 +1550,9 @@ namespace YuanxinGateway
             else
             {
                 command += "$dns=@(" + QuotePowerShellArray(original.DnsServers) + ");"
-                    + "Set-DnsClientServerAddress -InterfaceIndex $idx -ServerAddresses $dns -ErrorAction Stop;";
+                    + "$dns4=@($dns | Where-Object { $_ -notlike '*:*' });"
+                    + "$dns6=@($dns | Where-Object { $_ -like '*:*' });"
+                    + "Set-StaticDns $idx $dns4 $dns6;";
             }
 
             command += "Clear-DnsClientCache -ErrorAction SilentlyContinue;"
@@ -1688,15 +1728,13 @@ namespace YuanxinGateway
         private static string PowerShellDnsFunction()
         {
             return "function Set-NetshDnsFamily($family,$idx,[string[]]$addresses){"
-                + "if($null -eq $addresses -or $addresses.Count -eq 0){return;}"
-                + "$first=$addresses[0];$firstScoped=Add-ScopeIfNeeded $first $idx;"
+                + "if($null -eq $addresses -or $addresses.Count -eq 0){& netsh interface $family set dnsservers \"name=$idx\" source=static address=none validate=no | Out-Null;return;}"
+                + "$first=$addresses[0];"
                 + "& netsh interface $family set dnsservers \"name=$idx\" source=static \"address=$first\" register=primary validate=no | Out-Null;"
-                + "if($LASTEXITCODE -ne 0 -and $family -eq 'ipv6'){& netsh interface $family set dnsservers \"name=$idx\" source=static \"address=$firstScoped\" register=primary validate=no | Out-Null;}"
                 + "if($LASTEXITCODE -ne 0){throw ($family + ' DNS 写入失败: ' + $first);}"
                 + "for($i=1;$i -lt $addresses.Count;$i++){"
-                + "$address=$addresses[$i];$scoped=Add-ScopeIfNeeded $address $idx;$order=$i + 1;"
+                + "$address=$addresses[$i];$order=$i + 1;"
                 + "& netsh interface $family add dnsservers \"name=$idx\" \"address=$address\" \"index=$order\" validate=no | Out-Null;"
-                + "if($LASTEXITCODE -ne 0 -and $family -eq 'ipv6'){& netsh interface $family add dnsservers \"name=$idx\" \"address=$scoped\" \"index=$order\" validate=no | Out-Null;}"
                 + "if($LASTEXITCODE -ne 0){throw ($family + ' DNS 追加失败: ' + $address);}"
                 + "}"
                 + "};"
