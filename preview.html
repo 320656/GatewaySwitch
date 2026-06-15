@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>元信旁路由</title>
+    <title>元信旁路由 - 模拟演示版</title>
     <style>
         :root {
             --bg-color: #10131a;
@@ -29,6 +29,7 @@
             min-height: 100vh;
             overflow: hidden;
             position: relative;
+            user-select: none;
         }
 
         /* 模拟发光背景 */
@@ -41,6 +42,7 @@
             background: rgba(173, 198, 255, 0.07);
             border-radius: 50%;
             filter: blur(40px);
+            z-index: 0;
         }
         
         .glow-2 {
@@ -52,28 +54,66 @@
             background: rgba(255, 183, 134, 0.05);
             border-radius: 50%;
             filter: blur(40px);
+            z-index: 0;
         }
 
-        .container {
+        /* 布局容器 */
+        .workspace {
+            display: flex;
+            gap: 40px;
+            align-items: flex-start;
+            z-index: 1;
+            padding: 20px;
+        }
+
+        /* 模拟 WinForms 主窗体 */
+        .window-container {
             width: 440px;
             height: 620px;
-            position: relative;
-            z-index: 1;
+            background-color: var(--bg-color);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
             padding: 24px 28px;
             box-sizing: border-box;
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
         }
 
-        .header h1 {
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .header-title h1 {
             color: var(--primary);
             margin: 0;
             font-size: 24px;
         }
 
-        .header p {
+        .header-title p {
             color: var(--muted);
             margin: 4px 0 0 2px;
             font-size: 12px;
             font-weight: bold;
+        }
+
+        .settings-btn {
+            background: transparent;
+            border: none;
+            color: var(--muted);
+            font-size: 22px;
+            cursor: pointer;
+            padding: 4px;
+            transition: color 0.2s, transform 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .settings-btn:hover {
+            color: var(--primary);
+            transform: rotate(45deg);
         }
 
         .power-container {
@@ -96,20 +136,22 @@
             display: flex;
             justify-content: center;
             align-items: center;
+            outline: none;
         }
 
         .power-btn.active {
             background-color: var(--primary);
             color: #002e6a;
-            box-shadow: 0 0 20px rgba(173, 198, 255, 0.2);
+            box-shadow: 0 0 25px rgba(173, 198, 255, 0.3);
         }
 
         .status-text {
             margin-top: 16px;
-            font-size: 15px;
+            font-size: 14px;
             font-weight: bold;
             color: var(--muted);
             height: 24px;
+            text-align: center;
         }
 
         .status-text.active {
@@ -204,46 +246,358 @@
             opacity: 0.5;
             cursor: not-allowed;
         }
+
+        /* 模拟 WinForms 设置对话框 (模态) */
+        .modal-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            border-radius: 12px;
+        }
+
+        .modal-dialog {
+            width: 360px;
+            background-color: var(--bg-color);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            padding: 20px 24px;
+            box-sizing: border-box;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8);
+        }
+
+        .modal-dialog h3 {
+            margin-top: 0;
+            margin-bottom: 18px;
+            color: var(--text);
+            font-size: 18px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            color: var(--muted);
+            margin-bottom: 6px;
+        }
+
+        .input-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .form-control {
+            flex: 1;
+            background-color: var(--card-color);
+            border: 1px solid var(--card-border);
+            color: var(--text);
+            padding: 8px 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .form-control:focus {
+            border-color: var(--primary);
+        }
+
+        .btn-inline {
+            background-color: var(--card-color);
+            border: 1px solid var(--card-border);
+            color: var(--primary);
+            padding: 0 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            margin-top: 10px;
+            margin-bottom: 24px;
+        }
+
+        .checkbox-group input {
+            cursor: pointer;
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        .btn-action {
+            padding: 8px 20px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+        }
+
+        .btn-save {
+            background-color: var(--primary);
+            color: #002e6a;
+        }
+
+        .btn-cancel {
+            background-color: var(--card-color);
+            border: 1px solid var(--card-border);
+            color: var(--muted);
+        }
+
+        /* 场景模拟器控制面板 */
+        .simulator-card {
+            width: 320px;
+            background-color: var(--card-color);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 20px;
+            box-sizing: border-box;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .simulator-card h2 {
+            margin-top: 0;
+            font-size: 18px;
+            color: var(--primary);
+            border-bottom: 1px solid var(--card-border);
+            padding-bottom: 8px;
+            margin-bottom: 15px;
+        }
+
+        .sim-section {
+            margin-bottom: 20px;
+        }
+
+        .sim-section label {
+            display: block;
+            font-size: 12px;
+            color: var(--muted);
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        .sim-btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .sim-btn {
+            background-color: #262a32;
+            border: 1px solid var(--card-border);
+            color: var(--text);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+            text-align: left;
+            transition: background-color 0.2s;
+        }
+
+        .sim-btn:hover {
+            background-color: #323742;
+        }
+
+        .sim-btn.active {
+            border-color: var(--primary-dim);
+            background-color: rgba(77, 142, 255, 0.15);
+            color: var(--primary);
+        }
+
+        /* 模拟系统托盘气泡通知 */
+        .notification-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .toast {
+            width: 330px;
+            background-color: #20242e;
+            border-left: 4px solid var(--primary-dim);
+            border-radius: 4px;
+            padding: 12px 16px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            transform: translateX(380px);
+            transition: transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+            position: relative;
+        }
+
+        .toast.show {
+            transform: translateX(0);
+        }
+
+        .toast-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .toast-title {
+            font-size: 12px;
+            font-weight: bold;
+            color: var(--primary);
+        }
+
+        .toast-close {
+            background: transparent;
+            border: none;
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .toast-body {
+            font-size: 13px;
+            color: var(--text);
+            line-height: 1.4;
+        }
     </style>
 </head>
 <body>
     <div class="glow-1"></div>
     <div class="glow-2"></div>
 
-    <div class="container">
-        <div class="header">
-            <h1>元信旁路由</h1>
-            <p>Wi-Fi 网关助手</p>
+    <div class="workspace">
+        <!-- 模拟 WinForms 主窗体 -->
+        <div class="window-container">
+            <div class="header">
+                <div class="header-title">
+                    <h1>元信旁路由</h1>
+                    <p>网关助手</p>
+                </div>
+                <button class="settings-btn" id="openSettingsBtn" title="打开设置">⚙</button>
+            </div>
+
+            <div class="power-container">
+                <button class="power-btn" id="powerBtn">⏻</button>
+                <div class="status-text" id="statusText">以太网 未启用旁路由</div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2>网络诊断</h2>
+                    <div class="badge" id="badge">未测试</div>
+                </div>
+
+                <div class="latency-row">
+                    <div class="latency-label">GPT 延迟:</div>
+                    <div class="latency-value" id="latencyValue">--s</div>
+                </div>
+
+                <div class="progress-track">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+
+                <div class="detail-text" id="detailText">点击测试延迟检查 ChatGPT 访问。</div>
+
+                <button class="test-btn" id="testBtn">测试延迟</button>
+            </div>
+
+            <!-- 设置模态窗口 -->
+            <div class="modal-overlay" id="modalOverlay">
+                <div class="modal-dialog">
+                    <h3>设置</h3>
+                    <div class="form-group">
+                        <label>旁路由 IP 地址:</label>
+                        <input type="text" class="form-control" id="configGatewayIp" value="192.168.3.187">
+                    </div>
+                    <div class="form-group">
+                        <label>绑定 Wi-Fi SSID (留空不限制):</label>
+                        <div class="input-row">
+                            <input type="text" class="form-control" id="configSsid" value="LOYSec_5G" placeholder="例如: LOYSec_5G">
+                            <button class="btn-inline" id="btnGetSsid">获取当前</button>
+                        </div>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="configAutoEnable" checked>
+                        <label for="configAutoEnable" style="margin:0; cursor:pointer;">连上该 Wi-Fi 时自动启用旁路由</label>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn-action btn-cancel" id="btnCancel">取消</button>
+                        <button class="btn-action btn-save" id="btnSave">保存</button>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="power-container">
-            <button class="power-btn" id="powerBtn">⏻</button>
-            <div class="status-text" id="statusText">WLAN 未启用旁路由</div>
-        </div>
-
-        <div class="card">
-            <div class="card-header">
-                <h2>网络诊断</h2>
-                <div class="badge" id="badge">未测试</div>
+        <!-- 场景模拟器控制面板 -->
+        <div class="simulator-card">
+            <h2>网络环境模拟器</h2>
+            
+            <div class="sim-section">
+                <label>切换当前所处的网络环境:</label>
+                <div class="sim-btn-group">
+                    <button class="sim-btn active" id="simEth" data-type="ethernet" data-name="以太网">
+                        🔌 切换为：有线以太网 (无 SSID)
+                    </button>
+                    <button class="sim-btn" id="simWifiBound" data-type="wifi" data-name="LOYSec_5G">
+                        📶 连上 Wi-Fi：LOYSec_5G (已绑定的网)
+                    </button>
+                    <button class="sim-btn" id="simWifiOther" data-type="wifi" data-name="Office_Guest_5G">
+                        📶 连上 Wi-Fi：Office_Guest_5G (其他网络)
+                    </button>
+                    <button class="sim-btn" id="simDisconnect" data-type="none" data-name="未检测到活动连接">
+                        ❌ 断开连接：无网络连接
+                    </button>
+                </div>
             </div>
-
-            <div class="latency-row">
-                <div class="latency-label">GPT 延迟:</div>
-                <div class="latency-value" id="latencyValue">--s</div>
+            
+            <div style="font-size: 11px; color: var(--muted); line-height: 1.5; background: rgba(255,255,255,0.03); padding: 10px; border-radius: 6px; border: 1px dashed var(--card-border);">
+                <strong>演示指南：</strong><br>
+                1. 默认绑定 Wi-Fi 为 <code>LOYSec_5G</code>，自动启用开启。<br>
+                2. 点击 <strong>“连上 Wi-Fi: LOYSec_5G”</strong>，程序会自动启用旁路由，并在右下角弹出 Windows 托盘通知。<br>
+                3. 当处于启用状态时，点击 <strong>“连上 Wi-Fi: Office_Guest_5G”</strong>（或其他环境），程序会自动还原默认网关，并弹窗提示未配置。<br>
+                4. 若手动点击电源键关闭，程序会记住你的手动选择，直到下次重新连入该 Wi-Fi 时才再次激活自动启用。
             </div>
-
-            <div class="progress-track">
-                <div class="progress-fill" id="progressFill"></div>
-            </div>
-
-            <div class="detail-text" id="detailText">点击测试延迟检查 ChatGPT 访问。</div>
-
-            <button class="test-btn" id="testBtn">测试延迟</button>
         </div>
     </div>
 
+    <!-- Windows 托盘气泡通知模拟 -->
+    <div class="notification-container" id="toastContainer"></div>
+
     <script>
-        // UI 交互模拟脚本
+        // 配置对象 (模拟注册表，使用 localStorage 实现跨页面刷新持久化)
+        const registry = {
+            configGatewayIp: localStorage.getItem('configGatewayIp') || "192.168.3.187",
+            configSsid: localStorage.getItem('configSsid') !== null ? localStorage.getItem('configSsid') : "LOYSec_5G",
+            configAutoEnable: localStorage.getItem('configAutoEnable') !== null ? localStorage.getItem('configAutoEnable') === 'true' : true
+        };
+
+        // 当前网络状态模拟
+        let currentNetwork = {
+            type: "ethernet", // ethernet, wifi, none
+            name: "以太网"
+        };
+
+        let enabledByApp = false;
+        let isProcessing = false;
+        let userManuallyDisabled = false;
+        let lastSsid = null;
+        let loadingInterval;
+
+        // 获取 DOM 节点
         const powerBtn = document.getElementById('powerBtn');
         const statusText = document.getElementById('statusText');
         const testBtn = document.getElementById('testBtn');
@@ -252,76 +606,247 @@
         const badge = document.getElementById('badge');
         const detailText = document.getElementById('detailText');
 
-        let isEnabled = false;
-        let isProcessing = false;
-        let loadingInterval;
+        // 设置框 DOM
+        const openSettingsBtn = document.getElementById('openSettingsBtn');
+        const modalOverlay = document.getElementById('modalOverlay');
+        const btnCancel = document.getElementById('btnCancel');
+        const btnSave = document.getElementById('btnSave');
+        const btnGetSsid = document.getElementById('btnGetSsid');
+        const configGatewayIpInput = document.getElementById('configGatewayIp');
+        const configSsidInput = document.getElementById('configSsid');
+        const configAutoEnableInput = document.getElementById('configAutoEnable');
+
+        // 模拟器 DOM
+        const simBtns = document.querySelectorAll('.sim-btn');
+        const toastContainer = document.getElementById('toastContainer');
+
+        // 初始化输入框的值
+        configGatewayIpInput.value = registry.configGatewayIp;
+        configSsidInput.value = registry.configSsid;
+        configAutoEnableInput.checked = registry.configAutoEnable;
+
+        // 托盘通知气泡生成
+        function showNotification(body) {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerHTML = `
+                <div class="toast-header">
+                    <span class="toast-title">旁路由助手</span>
+                    <button class="toast-close" onclick="this.parentElement.parentElement.remove()">✕</button>
+                </div>
+                <div class="toast-body">${body}</div>
+            `;
+            toastContainer.appendChild(toast);
+            setTimeout(() => toast.classList.add('show'), 50);
+            
+            // 4秒后自动移除
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        // 更新软件主界面的网卡状态显示
+        function updateRouteVisualState() {
+            const alias = currentNetwork.name;
+            if (enabledByApp) {
+                powerBtn.classList.add('active');
+                statusText.textContent = `${alias} 已切到旁路由`;
+                statusText.className = 'status-text active';
+            } else {
+                powerBtn.classList.remove('active');
+                statusText.textContent = `${alias} 未启用旁路由`;
+                statusText.className = 'status-text';
+            }
+        }
 
         // 模拟动画文本
-        function animateText(baseText) {
+        function startLoadingText(baseText) {
             let dots = 0;
             statusText.textContent = baseText;
+            statusText.className = 'status-text active';
             loadingInterval = setInterval(() => {
                 dots = (dots + 1) % 4;
                 statusText.textContent = baseText + '.'.repeat(dots);
             }, 500);
         }
 
-        // 模拟切换网关
-        powerBtn.addEventListener('click', () => {
+        function stopLoadingText() {
+            clearInterval(loadingInterval);
+        }
+
+        // 异步启用逻辑
+        function enableGateway() {
+            return new Promise((resolve) => {
+                isProcessing = true;
+                powerBtn.style.opacity = '0.5';
+                testBtn.disabled = true;
+                openSettingsBtn.disabled = true;
+
+                startLoadingText("正在配置旁路由");
+                
+                setTimeout(() => {
+                    stopLoadingText();
+                    enabledByApp = true;
+                    isProcessing = false;
+                    powerBtn.style.opacity = '1';
+                    testBtn.disabled = false;
+                    openSettingsBtn.disabled = false;
+                    updateRouteVisualState();
+                    resolve();
+                }, 2000);
+            });
+        }
+
+        // 异步还原逻辑
+        function restoreWifi() {
+            return new Promise((resolve) => {
+                isProcessing = true;
+                powerBtn.style.opacity = '0.5';
+                testBtn.disabled = true;
+                openSettingsBtn.disabled = true;
+
+                startLoadingText("正在恢复原始网络");
+                
+                setTimeout(() => {
+                    stopLoadingText();
+                    enabledByApp = false;
+                    isProcessing = false;
+                    powerBtn.style.opacity = '1';
+                    testBtn.disabled = false;
+                    openSettingsBtn.disabled = false;
+                    updateRouteVisualState();
+                    resolve();
+                }, 2000);
+            });
+        }
+
+        // 手动点击电源按键
+        powerBtn.addEventListener('click', async () => {
             if (isProcessing) return;
-            isProcessing = true;
-            powerBtn.style.opacity = '0.5';
-            testBtn.disabled = true;
-            
-            if (!isEnabled) {
-                animateText("正在配置旁路由");
-                statusText.className = 'status-text active';
-                // 模拟耗时操作 2 秒
-                setTimeout(() => {
-                    clearInterval(loadingInterval);
-                    isEnabled = true;
-                    isProcessing = false;
-                    powerBtn.style.opacity = '1';
-                    powerBtn.classList.add('active');
-                    statusText.textContent = 'WLAN 已切到旁路由';
-                    testBtn.disabled = false;
-                }, 2000);
+
+            if (enabledByApp) {
+                userManuallyDisabled = true; // 记录用户手动关闭
+                await restoreWifi();
             } else {
-                animateText("正在恢复原始网络");
-                statusText.className = 'status-text';
-                setTimeout(() => {
-                    clearInterval(loadingInterval);
-                    isEnabled = false;
-                    isProcessing = false;
-                    powerBtn.style.opacity = '1';
-                    powerBtn.classList.remove('active');
-                    statusText.textContent = 'WLAN 未启用旁路由';
-                    testBtn.disabled = false;
-                }, 2000);
+                userManuallyDisabled = false; // 用户手动开启，重置标志
+                await enableGateway();
+                runLatencyTest();
             }
         });
 
-        // 模拟延迟测试
-        testBtn.addEventListener('click', () => {
+        // 延迟测试模拟
+        function runLatencyTest() {
             testBtn.disabled = true;
             testBtn.textContent = '测试中...';
             badge.textContent = '检测中';
             badge.style.color = 'var(--primary)';
             latencyValue.textContent = '--s';
-            detailText.textContent = '正在连接 chatgpt.com...';
+            detailText.textContent = `正在连接 chatgpt.com...`;
             progressFill.style.width = '20%';
             progressFill.style.backgroundColor = 'var(--primary-dim)';
 
             setTimeout(() => {
                 testBtn.disabled = false;
                 testBtn.textContent = '测试延迟';
-                latencyValue.textContent = '0.85s';
-                badge.textContent = '连接稳定';
-                badge.style.color = 'var(--success)';
-                detailText.textContent = 'ChatGPT 可达。';
-                progressFill.style.width = '90%';
-                progressFill.style.backgroundColor = 'var(--success)';
+                if (enabledByApp) {
+                    latencyValue.textContent = '0.85s';
+                    badge.textContent = '连接稳定';
+                    badge.style.color = 'var(--success)';
+                    detailText.textContent = 'ChatGPT 可达。';
+                    progressFill.style.width = '90%';
+                    progressFill.style.backgroundColor = 'var(--success)';
+                } else {
+                    latencyValue.textContent = '--s';
+                    badge.textContent = '连接失败';
+                    badge.style.color = 'var(--danger)';
+                    detailText.textContent = '连接超时，请确认当前旁路由网络畅通。';
+                    progressFill.style.width = '15%';
+                    progressFill.style.backgroundColor = 'var(--danger)';
+                }
             }, 1500);
+        }
+
+        testBtn.addEventListener('click', runLatencyTest);
+
+        // 设置对话框显示/隐藏
+        openSettingsBtn.addEventListener('click', () => {
+            configGatewayIpInput.value = registry.configGatewayIp;
+            configSsidInput.value = registry.configSsid;
+            configAutoEnableInput.checked = registry.configAutoEnable;
+            modalOverlay.style.display = 'flex';
+        });
+
+        btnCancel.addEventListener('click', () => {
+            modalOverlay.style.display = 'none';
+        });
+
+        btnSave.addEventListener('click', () => {
+            registry.configGatewayIp = configGatewayIpInput.value.trim();
+            registry.configSsid = configSsidInput.value.trim();
+            registry.configAutoEnable = configAutoEnableInput.checked;
+            
+            localStorage.setItem('configGatewayIp', registry.configGatewayIp);
+            localStorage.setItem('configSsid', registry.configSsid);
+            localStorage.setItem('configAutoEnable', registry.configAutoEnable);
+
+            modalOverlay.style.display = 'none';
+            updateRouteVisualState();
+        });
+
+        btnGetSsid.addEventListener('click', () => {
+            if (currentNetwork.type === "wifi") {
+                configSsidInput.value = currentNetwork.name;
+            } else {
+                alert("当前处于有线连接或未连网，无法获取 Wi-Fi SSID。");
+            }
+        });
+
+        // 场景模拟器网络切换逻辑
+        simBtns.forEach(btn => {
+            btn.addEventListener('click', async () => {
+                if (isProcessing) return;
+
+                simBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                const netType = btn.dataset.type;
+                const netName = btn.dataset.name;
+
+                currentNetwork.type = netType;
+                currentNetwork.name = netName;
+
+                updateRouteVisualState();
+
+                // 核心：模拟后台 Timer 自动切换逻辑 (每 3 秒检测一次)
+                // 模拟 SSID 改变
+                const currentSsid = netType === "wifi" ? netName : "";
+                
+                if (currentSsid !== lastSsid) {
+                    userManuallyDisabled = false; // 改变 Wi-Fi 重置手动关闭标志
+                    lastSsid = currentSsid;
+                }
+
+                const configSsid = registry.configSsid;
+                const autoEnable = registry.configAutoEnable;
+
+                if (configSsid) {
+                    if (enabledByApp) {
+                        // 如果当前已开启旁路由，但现在 SSID 变了（或者断开了）
+                        if (currentSsid !== configSsid) {
+                            await restoreWifi();
+                            const displaySsid = currentSsid ? currentSsid : "有线/无网络";
+                            showNotification(`当前连接的 Wi-Fi (${displaySsid}) 未配置旁路由，已自动恢复默认网络。`);
+                        }
+                    } else {
+                        // 如果未开启，但现在连上了配置的 SSID 且允许自动启用
+                        if (currentSsid === configSsid && autoEnable && !userManuallyDisabled) {
+                            await enableGateway();
+                            showNotification(`已连接到指定 Wi-Fi，已自动启用旁路由。`);
+                        }
+                    }
+                }
+            });
         });
     </script>
 </body>
