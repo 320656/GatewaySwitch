@@ -31,7 +31,7 @@ jobs:
     - name: Build Swift package
       run: |
         cd macos/GatewaySwitch
-        swift build -c release --arch arm64 --arch x86_64
+        swift build -c release
 
     - name: Create app bundle
       run: |
@@ -42,7 +42,17 @@ jobs:
         mkdir -p GatewaySwitch.app/Contents/Resources/Scripts
 
         # Copy executable
-        cp .build/release/GatewaySwitch GatewaySwitch.app/Contents/MacOS/
+        if [ -f .build/release/GatewaySwitch ]; then
+          cp .build/release/GatewaySwitch GatewaySwitch.app/Contents/MacOS/
+        elif [ -f .build/arm64-apple-macosx/release/GatewaySwitch ]; then
+          cp .build/arm64-apple-macosx/release/GatewaySwitch GatewaySwitch.app/Contents/MacOS/
+        elif [ -f .build/x86_64-apple-macosx/release/GatewaySwitch ]; then
+          cp .build/x86_64-apple-macosx/release/GatewaySwitch GatewaySwitch.app/Contents/MacOS/
+        else
+          echo "Error: Cannot find built executable"
+          ls -la .build/
+          exit 1
+        fi
 
         # Copy script
         cp Scripts/gateway-manager.sh GatewaySwitch.app/Contents/Resources/Scripts/

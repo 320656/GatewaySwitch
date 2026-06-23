@@ -15,8 +15,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "GatewaySwitch",
-            path: ".",
-            exclude: ["Scripts"],
+            dependencies: [],
             resources: [
                 .copy("Scripts/gateway-manager.sh")
             ]

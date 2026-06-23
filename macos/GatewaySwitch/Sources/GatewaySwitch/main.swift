@@ -9,8 +9,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var timer: Timer?
 
     let scriptPath: String = {
-        let bundle = Bundle.main
-        return bundle.path(forResource: "gateway-manager", ofType: "sh", inDirectory: "Scripts") ?? ""
+        if let resourcePath = Bundle.main.resourcePath {
+            let scriptInBundle = "\(resourcePath)/Scripts/gateway-manager.sh"
+            if FileManager.default.fileExists(atPath: scriptInBundle) {
+                return scriptInBundle
+            }
+        }
+        // Fallback for development
+        let currentDir = FileManager.default.currentDirectoryPath
+        return "\(currentDir)/Scripts/gateway-manager.sh"
     }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
