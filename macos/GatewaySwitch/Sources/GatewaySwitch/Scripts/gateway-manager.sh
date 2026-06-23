@@ -47,8 +47,15 @@ with open('$CONFIG_FILE', 'w') as f:
 "
 }
 
-# Get active Wi-Fi interface
+# Get active Wi-Fi service name
+get_wifi_service() {
+    # Simply return "Wi-Fi" if it exists in network services
+    networksetup -listnetworkserviceorder | grep -o "Wi-Fi" | head -1
+}
+
+# Get active Wi-Fi interface device
 get_wifi_interface() {
+    # Get the device name (e.g., "en0")
     networksetup -listallhardwareports | awk '/Wi-Fi|AirPort/{getline; print $2}'
 }
 
@@ -64,33 +71,33 @@ get_current_ssid() {
 
 # Get current gateway
 get_current_gateway() {
-    local interface="$1"
-    networksetup -getinfo "$interface" | awk '/^Router:/ {print $2}'
+    local service="$1"
+    networksetup -getinfo "$service" | awk '/^Router:/ {print $2}'
 }
 
 # Get current DNS servers
 get_current_dns() {
-    local interface="$1"
-    networksetup -getdnsservers "$interface" | grep -v "There aren't any DNS Servers" | tr '\n' ',' | sed 's/,$//'
+    local service="$1"
+    networksetup -getdnsservers "$service" | grep -v "There aren't any DNS Servers" | tr '\n' ',' | sed 's/,$//'
 }
 
 # Check if using DHCP for DNS
 is_dns_dhcp() {
-    local interface="$1"
-    local dns=$(networksetup -getdnsservers "$interface")
+    local service="$1"
+    local dns=$(networksetup -getdnsservers "$service")
     [[ "$dns" == *"aren't any DNS Servers"* ]] && echo "true" || echo "false"
 }
 
 # Save current network configuration
 save_backup() {
-    local interface="$1"
-    local gateway=$(get_current_gateway "$interface")
-    local dns=$(get_current_dns "$interface")
-    local is_dhcp=$(is_dns_dhcp "$interface")
+    local service="$1"
+    local gateway=$(get_current_gateway "$service")
+    local dns=$(get_current_dns "$service")
+    local is_dhcp=$(is_dns_dhcp "$service")
 
     cat > "$BACKUP_FILE" <<EOF
 {
-  "interface": "$interface",
+  "service": "$service",
   "gateway": "$gateway",
   "dns": "$dns",
   "is_dhcp": $is_dhcp
@@ -101,15 +108,15 @@ EOF
 # Check if gateway is active
 is_gateway_active() {
     local target_gateway="$1"
-    local interface=$(get_wifi_interface)
+    local service=$(get_wifi_service)
 
-    if [ -z "$interface" ]; then
+    if [ -z "$service" ]; then
         echo "false"
         return
     fi
 
-    local current_gateway=$(get_current_gateway "$interface")
-    local current_dns=$(get_current_dns "$interface")
+    local current_gateway=$(get_current_gateway "$service")
+    local current_dns=$(get_current_dns "$service")
 
     if [ "$current_gateway" = "$target_gateway" ] && [[ "$current_dns" == *"$target_gateway"* ]]; then
         echo "true"
@@ -121,25 +128,26 @@ is_gateway_active() {
 # Enable gateway
 enable_gateway() {
     local target_gateway=$(get_config "gateway_ipv4")
-    local interface=$(get_wifi_interface)
+    local service=$(get_wifi_service)
+    local device=$(get_wifi_interface)
 
-    if [ -z "$interface" ]; then
-        echo "ERROR: No Wi-Fi interface found"
+    if [ -z "$service" ]; then
+        echo "ERROR: No Wi-Fi service found"
         exit 1
     fi
 
     # Save current configuration
-    save_backup "$interface"
+    save_backup "$service"
 
     # Get current IP address and subnet
-    local current_ip=$(networksetup -getinfo "$interface" | awk '/^IP address:/ {print $3}')
-    local subnet_mask=$(networksetup -getinfo "$interface" | awk '/^Subnet mask:/ {print $3}')
+    local current_ip=$(networksetup -getinfo "$service" | awk '/^IP address:/ {print $3}')
+    local subnet_mask=$(networksetup -getinfo "$service" | awk '/^Subnet mask:/ {print $3}')
 
     # If no IP assigned, try to get it from ifconfig
     if [ -z "$current_ip" ] || [ "$current_ip" = "none" ]; then
         echo "WARNING: No IP from networksetup, trying ifconfig..."
-        current_ip=$(ifconfig "$interface" | awk '/inet / {print $2}')
-        subnet_mask=$(ifconfig "$interface" | awk '/inet / {print $4}' | sed 's/0x//')
+        current_ip=$(ifconfig "$device" | awk '/inet / {print $2}')
+        subnet_mask=$(ifconfig "$device" | awk '/inet / {print $4}' | sed 's/0x//')
 
         # Convert hex subnet to decimal (e.g., ffffff00 -> 255.255.255.0)
         if [ -n "$subnet_mask" ]; then
@@ -149,17 +157,18 @@ enable_gateway() {
 
     if [ -z "$current_ip" ] || [ "$current_ip" = "none" ]; then
         echo "ERROR: No IP address assigned. Please ensure Wi-Fi is connected and has obtained an IP address."
-        echo "Current interface: $interface"
-        echo "Interface info:"
-        networksetup -getinfo "$interface"
+        echo "Current service: $service"
+        echo "Current device: $device"
+        echo "Service info:"
+        networksetup -getinfo "$service"
         exit 1
     fi
 
     # Set manual IP with new gateway
-    networksetup -setmanual "$interface" "$current_ip" "$subnet_mask" "$target_gateway"
+    networksetup -setmanual "$service" "$current_ip" "$subnet_mask" "$target_gateway"
 
     # Set DNS to gateway
-    networksetup -setdnsservers "$interface" "$target_gateway"
+    networksetup -setdnsservers "$service" "$target_gateway"
 
     # Flush DNS cache
     sudo dscacheutil -flushcache
@@ -175,26 +184,26 @@ restore_gateway() {
         exit 1
     fi
 
-    local interface=$(python3 -c "import json; print(json.load(open('$BACKUP_FILE'))['interface'])")
+    local service=$(python3 -c "import json; print(json.load(open('$BACKUP_FILE'))['service'])")
     local gateway=$(python3 -c "import json; print(json.load(open('$BACKUP_FILE'))['gateway'])")
     local dns=$(python3 -c "import json; print(json.load(open('$BACKUP_FILE'))['dns'])")
     local is_dhcp=$(python3 -c "import json; print(json.load(open('$BACKUP_FILE'))['is_dhcp'])")
 
     # Get current IP and subnet
-    local current_ip=$(networksetup -getinfo "$interface" | awk '/^IP address:/ {print $3}')
-    local subnet_mask=$(networksetup -getinfo "$interface" | awk '/^Subnet mask:/ {print $3}')
+    local current_ip=$(networksetup -getinfo "$service" | awk '/^IP address:/ {print $3}')
+    local subnet_mask=$(networksetup -getinfo "$service" | awk '/^Subnet mask:/ {print $3}')
 
     if [ -n "$gateway" ] && [ "$gateway" != "none" ]; then
-        networksetup -setmanual "$interface" "$current_ip" "$subnet_mask" "$gateway"
+        networksetup -setmanual "$service" "$current_ip" "$subnet_mask" "$gateway"
     fi
 
     # Restore DNS
     if [ "$is_dhcp" = "true" ]; then
-        networksetup -setdnsservers "$interface" "Empty"
+        networksetup -setdnsservers "$service" "Empty"
     else
         IFS=',' read -ra DNS_ARRAY <<< "$dns"
         if [ ${#DNS_ARRAY[@]} -gt 0 ]; then
-            networksetup -setdnsservers "$interface" "${DNS_ARRAY[@]}"
+            networksetup -setdnsservers "$service" "${DNS_ARRAY[@]}"
         fi
     fi
 
