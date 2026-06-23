@@ -219,17 +219,33 @@ restore_gateway() {
         exit 1
     fi
 
-    # Handle both old format (interface) and new format (service)
-    local service=$(python3 -c "import json; d=json.load(open('$BACKUP_FILE')); print(d.get('service', d.get('interface', '')))")
-    local gateway=$(python3 -c "import json; print(json.load(open('$BACKUP_FILE')).get('gateway', ''))")
-    local ipv6_gateway=$(python3 -c "import json; print(json.load(open('$BACKUP_FILE')).get('ipv6_gateway', ''))")
-    local dns=$(python3 -c "import json; print(json.load(open('$BACKUP_FILE')).get('dns', ''))")
-    local is_dhcp=$(python3 -c "import json; print(json.load(open('$BACKUP_FILE')).get('is_dhcp', 'false'))")
+    # Read backup file with better error handling
+    local service=""
+    local gateway=""
+    local ipv6_gateway=""
+    local dns=""
+    local is_dhcp="false"
 
-    if [ -z "$service" ]; then
-        echo "ERROR: Cannot determine service from backup"
-        exit 1
+    # Try to parse JSON, handle both old and new formats
+    if command -v python3 &> /dev/null; then
+        service=$(python3 -c "import json; d=json.load(open('$BACKUP_FILE')); print(d.get('service', d.get('interface', '')))" 2>/dev/null || echo "")
+        gateway=$(python3 -c "import json; d=json.load(open('$BACKUP_FILE')); print(d.get('gateway', ''))" 2>/dev/null || echo "")
+        ipv6_gateway=$(python3 -c "import json; d=json.load(open('$BACKUP_FILE')); print(d.get('ipv6_gateway', ''))" 2>/dev/null || echo "")
+        dns=$(python3 -c "import json; d=json.load(open('$BACKUP_FILE')); print(d.get('dns', ''))" 2>/dev/null || echo "")
+        is_dhcp=$(python3 -c "import json; d=json.load(open('$BACKUP_FILE')); print(d.get('is_dhcp', 'false'))" 2>/dev/null || echo "false")
     fi
+
+    # If parsing failed or service is empty, try to get current service
+    if [ -z "$service" ]; then
+        echo "WARNING: Could not read service from backup, using current Wi-Fi service..."
+        service=$(get_wifi_service)
+        if [ -z "$service" ]; then
+            echo "ERROR: Cannot determine Wi-Fi service"
+            exit 1
+        fi
+    fi
+
+    echo "Restoring configuration for service: $service"
 
     # Get current IP and subnet
     local current_ip=$(networksetup -getinfo "$service" | awk '/^IP address:/ {print $3}')
@@ -239,6 +255,8 @@ restore_gateway() {
     if [ -n "$gateway" ] && [ "$gateway" != "none" ]; then
         echo "Restoring IPv4 gateway to $gateway..."
         networksetup -setmanual "$service" "$current_ip" "$subnet_mask" "$gateway"
+    else
+        echo "No IPv4 gateway to restore"
     fi
 
     # Restore IPv6 gateway
@@ -253,15 +271,24 @@ restore_gateway() {
     if [ "$is_dhcp" = "true" ]; then
         networksetup -setdnsservers "$service" "Empty"
     else
-        IFS=',' read -ra DNS_ARRAY <<< "$dns"
-        if [ ${#DNS_ARRAY[@]} -gt 0 ]; then
-            networksetup -setdnsservers "$service" "${DNS_ARRAY[@]}"
+        if [ -n "$dns" ]; then
+            IFS=',' read -ra DNS_ARRAY <<< "$dns"
+            if [ ${#DNS_ARRAY[@]} -gt 0 ]; then
+                networksetup -setdnsservers "$service" "${DNS_ARRAY[@]}"
+            else
+                networksetup -setdnsservers "$service" "Empty"
+            fi
+        else
+            networksetup -setdnsservers "$service" "Empty"
         fi
     fi
 
     # Flush DNS cache
     sudo dscacheutil -flushcache
     sudo killall -HUP mDNSResponder 2>/dev/null || true
+
+    # Remove old backup file to prevent future issues
+    rm -f "$BACKUP_FILE"
 
     echo "Gateway restored successfully"
 }
