@@ -1,0 +1,105 @@
+name: Build macOS App
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'macos/**'
+      - '.github/workflows/build-macos.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'macos/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
+
+    - name: Make script executable
+      run: chmod +x macos/GatewaySwitch/Scripts/gateway-manager.sh
+
+    - name: Build Swift package
+      run: |
+        cd macos/GatewaySwitch
+        swift build -c release --arch arm64 --arch x86_64
+
+    - name: Create app bundle
+      run: |
+        cd macos/GatewaySwitch
+
+        # Create app structure
+        mkdir -p GatewaySwitch.app/Contents/MacOS
+        mkdir -p GatewaySwitch.app/Contents/Resources/Scripts
+
+        # Copy executable
+        cp .build/release/GatewaySwitch GatewaySwitch.app/Contents/MacOS/
+
+        # Copy script
+        cp Scripts/gateway-manager.sh GatewaySwitch.app/Contents/Resources/Scripts/
+        chmod +x GatewaySwitch.app/Contents/Resources/Scripts/gateway-manager.sh
+
+        # Create Info.plist
+        cat > GatewaySwitch.app/Contents/Info.plist <<EOF
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>CFBundleExecutable</key>
+            <string>GatewaySwitch</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.yuanxin.gatewayswitch</string>
+            <key>CFBundleName</key>
+            <string>GatewaySwitch</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>1.0.0</string>
+            <key>CFBundleVersion</key>
+            <string>1</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>11.0</string>
+            <key>LSUIElement</key>
+            <true/>
+            <key>NSHumanReadableCopyright</key>
+            <string>Copyright © 2026</string>
+        </dict>
+        </plist>
+        EOF
+
+    - name: Create DMG
+      run: |
+        cd macos/GatewaySwitch
+
+        # Create temporary directory for DMG contents
+        mkdir -p dmg
+        cp -R GatewaySwitch.app dmg/
+
+        # Create DMG
+        hdiutil create -volname "GatewaySwitch" -srcfolder dmg -ov -format UDZO GatewaySwitch.dmg
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: GatewaySwitch-macOS
+        path: macos/GatewaySwitch/GatewaySwitch.dmg
+        retention-days: 30
+
+    - name: Create Release (on tag)
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: macos/GatewaySwitch/GatewaySwitch.dmg
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
