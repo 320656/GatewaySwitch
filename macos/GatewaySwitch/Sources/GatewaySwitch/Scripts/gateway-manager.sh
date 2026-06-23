@@ -135,8 +135,23 @@ enable_gateway() {
     local current_ip=$(networksetup -getinfo "$interface" | awk '/^IP address:/ {print $3}')
     local subnet_mask=$(networksetup -getinfo "$interface" | awk '/^Subnet mask:/ {print $3}')
 
+    # If no IP assigned, try to get it from ifconfig
     if [ -z "$current_ip" ] || [ "$current_ip" = "none" ]; then
-        echo "ERROR: No IP address assigned"
+        echo "WARNING: No IP from networksetup, trying ifconfig..."
+        current_ip=$(ifconfig "$interface" | awk '/inet / {print $2}')
+        subnet_mask=$(ifconfig "$interface" | awk '/inet / {print $4}' | sed 's/0x//')
+
+        # Convert hex subnet to decimal (e.g., ffffff00 -> 255.255.255.0)
+        if [ -n "$subnet_mask" ]; then
+            subnet_mask=$(python3 -c "import socket,struct;print(socket.inet_ntoa(struct.pack('>I', int('$subnet_mask', 16))))")
+        fi
+    fi
+
+    if [ -z "$current_ip" ] || [ "$current_ip" = "none" ]; then
+        echo "ERROR: No IP address assigned. Please ensure Wi-Fi is connected and has obtained an IP address."
+        echo "Current interface: $interface"
+        echo "Interface info:"
+        networksetup -getinfo "$interface"
         exit 1
     fi
 
