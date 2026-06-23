@@ -66,7 +66,27 @@ get_current_ssid() {
         echo ""
         return
     fi
-    /System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport -I | awk '/ SSID/ {print $2}'
+
+    # Try multiple methods to get SSID
+    # Method 1: airport command (older macOS)
+    local ssid=$(/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport -I 2>/dev/null | awk '/ SSID/ {print $2}')
+
+    # Method 2: networksetup command
+    if [ -z "$ssid" ]; then
+        ssid=$(networksetup -getairportnetwork "$interface" 2>/dev/null | sed 's/Current Wi-Fi Network: //')
+    fi
+
+    # Method 3: system_profiler (slowest but most reliable)
+    if [ -z "$ssid" ] || [ "$ssid" = "You are not associated with an AirPort network." ]; then
+        ssid=$(system_profiler SPAirPortDataType 2>/dev/null | awk -F': ' '/Current Network/ {getline; print $2}' | xargs)
+    fi
+
+    # Clean up error messages
+    if [[ "$ssid" == *"not associated"* ]] || [[ "$ssid" == *"off"* ]]; then
+        echo ""
+    else
+        echo "$ssid"
+    fi
 }
 
 # Get current gateway
