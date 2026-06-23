@@ -31,6 +31,17 @@ jobs:
     - name: Build Swift package
       run: |
         cd macos/GatewaySwitch
+
+        # Convert .ico to .icns for macOS
+        # Extract PNG from .ico and create .icns
+        mkdir -p icon.iconset
+        sips -s format png ../../assets/app.ico --out icon.iconset/icon_512x512.png -z 512 512
+        sips -s format png ../../assets/app.ico --out icon.iconset/icon_256x256.png -z 256 256
+        sips -s format png ../../assets/app.ico --out icon.iconset/icon_128x128.png -z 128 128
+        sips -s format png ../../assets/app.ico --out icon.iconset/icon_32x32.png -z 32 32
+        sips -s format png ../../assets/app.ico --out icon.iconset/icon_16x16.png -z 16 16
+        iconutil -c icns icon.iconset -o app.icns
+
         swift build -c release
 
     - name: Create app bundle
@@ -60,6 +71,10 @@ jobs:
 
         # Copy Info.plist from repo
         cp ../Info.plist GatewaySwitch.app/Contents/
+
+        # Copy app icon
+        mkdir -p GatewaySwitch.app/Contents/Resources
+        cp app.icns GatewaySwitch.app/Contents/Resources/
 
         # Create PkgInfo
         echo -n "APPL????" > GatewaySwitch.app/Contents/PkgInfo

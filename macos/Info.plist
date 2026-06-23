@@ -18,5 +18,7 @@
     <string>11.0</string>
     <key>LSUIElement</key>
     <true/>
+    <key>CFBundleIconFile</key>
+    <string>app</string>
 </dict>
 </plist>
