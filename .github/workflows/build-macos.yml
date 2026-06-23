@@ -59,7 +59,7 @@ jobs:
         chmod +x GatewaySwitch.app/Contents/Resources/Scripts/gateway-manager.sh
 
         # Copy Info.plist from repo
-        cp ../../Info.plist GatewaySwitch.app/Contents/
+        cp ../Info.plist GatewaySwitch.app/Contents/
 
         # Create PkgInfo
         echo -n "APPL????" > GatewaySwitch.app/Contents/PkgInfo
