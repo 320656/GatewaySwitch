@@ -29,22 +29,45 @@ EOF
 get_config() {
     local key="$1"
     init_config
-    python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('$key', ''))"
+    CONFIG_FILE="$CONFIG_FILE" CONFIG_KEY="$key" python3 <<'PY'
+import json
+import os
+
+with open(os.environ["CONFIG_FILE"], "r", encoding="utf-8") as f:
+    config = json.load(f)
+
+value = config.get(os.environ["CONFIG_KEY"], "")
+if isinstance(value, bool):
+    print(str(value).lower())
+else:
+    print(value)
+PY
 }
 
 # Set config value
 set_config() {
     local key="$1"
-    local value="$2"
+    local value="${2-}"
     init_config
-    python3 -c "
+    CONFIG_FILE="$CONFIG_FILE" CONFIG_KEY="$key" CONFIG_VALUE="$value" python3 <<'PY'
 import json
-with open('$CONFIG_FILE', 'r') as f:
+import os
+
+config_file = os.environ["CONFIG_FILE"]
+key = os.environ["CONFIG_KEY"]
+value = os.environ["CONFIG_VALUE"]
+
+if key == "auto_enable":
+    value = value.lower() == "true"
+
+with open(config_file, "r", encoding="utf-8") as f:
     config = json.load(f)
-config['$key'] = '$value'
-with open('$CONFIG_FILE', 'w') as f:
+
+config[key] = value
+
+with open(config_file, "w", encoding="utf-8") as f:
     json.dump(config, f, indent=2)
-"
+PY
 }
 
 # Get active Wi-Fi service name
@@ -140,9 +163,14 @@ enable_gateway() {
         exit 1
     fi
 
-    # Get current IPv4 address and subnet
+    # Capture the current automatic addresses before switching anything to manual.
     local current_ip=$(networksetup -getinfo "$service" | awk '/^IP address:/ {print $3}')
     local subnet_mask=$(networksetup -getinfo "$service" | awk '/^Subnet mask:/ {print $3}')
+    local current_ipv6=""
+
+    if [ -n "$target_gateway_ipv6" ]; then
+        current_ipv6=$(ifconfig "$device" | awk '/inet6 / && $2 !~ /^fe80:/ && $2 !~ /^fc/ && $2 !~ /^fd/ {print $2; exit}')
+    fi
 
     # Fallback to ifconfig if networksetup fails
     if [ -z "$current_ip" ] || [ "$current_ip" = "none" ]; then
@@ -164,9 +192,6 @@ enable_gateway() {
 
     # Set IPv6 if configured
     if [ -n "$target_gateway_ipv6" ]; then
-        # Get current IPv6 global address (not link-local fe80::)
-        local current_ipv6=$(ifconfig "$device" | awk '/inet6 / && !/fe80::/ {print $2; exit}')
-
         if [ -n "$current_ipv6" ]; then
             echo "Setting IPv6: $current_ipv6/64, gateway: $target_gateway_ipv6"
             networksetup -setv6manual "$service" "$current_ipv6" 64 "$target_gateway_ipv6"

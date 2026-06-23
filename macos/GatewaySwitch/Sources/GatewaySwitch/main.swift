@@ -383,6 +383,8 @@ class SettingsView: NSView {
     }
 
     @objc func saveSettings() {
+        window?.makeFirstResponder(nil)
+
         let ipv4 = ipv4Field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let ipv6 = ipv6Field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let ssid = ssidField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -395,10 +397,26 @@ class SettingsView: NSView {
         }
 
         let appDelegate = NSApplication.shared.delegate as! AppDelegate
-        _ = appDelegate.runScript(args: ["set-config", "gateway_ipv4", ipv4])
-        _ = appDelegate.runScript(args: ["set-config", "gateway_ipv6", ipv6])
-        _ = appDelegate.runScript(args: ["set-config", "ssid", ssid])
-        _ = appDelegate.runScript(args: ["set-config", "auto_enable", autoEnable])
+        let updates = [
+            ("gateway_ipv4", ipv4),
+            ("gateway_ipv6", ipv6),
+            ("ssid", ssid),
+            ("auto_enable", autoEnable)
+        ]
+
+        for (key, value) in updates {
+            let result = appDelegate.runScript(args: ["set-config", key, value])
+            if !result.success {
+                showAlert(title: "保存失败", message: result.output)
+                return
+            }
+
+            let savedValue = appDelegate.runScript(args: ["get-config", key]).output.trimmingCharacters(in: .whitespacesAndNewlines)
+            if savedValue != value {
+                showAlert(title: "保存失败", message: "\(key) 写入后读回不一致")
+                return
+            }
+        }
 
         window?.close()
 
