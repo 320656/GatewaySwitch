@@ -42,7 +42,11 @@ git push origin v1.0.0-macos
 
 1. 下载 `GatewaySwitch.dmg`
 2. 打开 DMG，拖动 `GatewaySwitch.app` 到应用程序文件夹
-3. 首次运行可能需要在「系统设置 > 隐私与安全性」中允许运行
+3. 首次运行需要移除隔离标记：
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/GatewaySwitch.app
+   ```
+4. 双击运行，菜单栏会出现网络图标
 
 ## 使用
 
