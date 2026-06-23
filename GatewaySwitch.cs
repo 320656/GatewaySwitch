@@ -1220,7 +1220,7 @@ namespace YuanxinGateway
     {
         private const string RegistryPath = "Software\\YuanxinGatewaySwitch";
         private const string DefaultGatewayIp = "192.168.3.187";
-        private const string DefaultGatewayIpv6 = "fe80::83fd:b489:cddb:a034";
+        private const string DefaultGatewayIpv6 = "fe80::20c:29ff:fe2b:cd7d";
 
         public static bool TryNormalizeGatewayIpv6Input(string value, out string normalized, out string error)
         {
@@ -1261,7 +1261,7 @@ namespace YuanxinGateway
             IPAddress ipv6Address;
             if (!IPAddress.TryParse(candidate, out ipv6Address) || ipv6Address.AddressFamily != AddressFamily.InterNetworkV6)
             {
-                error = "请输入有效的旁路由 IPv6 地址。\n可填: fe80::83fd:b489:cddb:a034\n也兼容: fe80::83fd:b489:cddb:a034/64";
+                error = "请输入有效的旁路由 IPv6 地址。\n可填: fe80::20c:29ff:fe2b:cd7d\n也兼容: fe80::20c:29ff:fe2b:cd7d/64";
                 return false;
             }
 
@@ -1539,7 +1539,11 @@ namespace YuanxinGateway
                 + "$ErrorActionPreference='Stop';"
                 + PowerShellNormalizeFunction()
                 + PowerShellDnsFunction()
-                + "foreach($store in @('ActiveStore','PersistentStore')){Get-NetRoute -PolicyStore $store -InterfaceIndex $idx -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Where-Object { $_.NextHop -eq $gw } | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue;}"
+                + "Set-StaticDns $idx @() @();"
+                + "foreach($store in @('ActiveStore','PersistentStore')){"
+                + "Get-NetRoute -PolicyStore $store -InterfaceIndex $idx -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue;"
+                + "Get-NetRoute -PolicyStore $store -InterfaceIndex $idx -DestinationPrefix '::/0' -ErrorAction SilentlyContinue | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue;"
+                + "}"
                 + "New-NetRoute -InterfaceIndex $idx -DestinationPrefix '0.0.0.0/0' -NextHop $gw -RouteMetric 1 -PolicyStore ActiveStore -ErrorAction Stop;"
                 + "New-NetRoute -InterfaceIndex $idx -DestinationPrefix '0.0.0.0/0' -NextHop $gw -RouteMetric 1 -PolicyStore PersistentStore -ErrorAction SilentlyContinue;";
 
@@ -1549,7 +1553,6 @@ namespace YuanxinGateway
                 command += "$gw6='" + gw6 + "';"
                     + "$gw6Scoped=Add-ScopeIfNeeded $gw6 $idx;"
                     + "$gw6Norm=Normalize-Address $gw6;"
-                    + "foreach($store in @('ActiveStore','PersistentStore')){Get-NetRoute -PolicyStore $store -InterfaceIndex $idx -DestinationPrefix '::/0' -ErrorAction SilentlyContinue | Where-Object { (Normalize-Address $_.NextHop) -eq $gw6Norm } | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue;}"
                     + "try{New-NetRoute -InterfaceIndex $idx -DestinationPrefix '::/0' -NextHop $gw6 -RouteMetric 1 -PolicyStore ActiveStore -ErrorAction Stop;}catch{New-NetRoute -InterfaceIndex $idx -DestinationPrefix '::/0' -NextHop $gw6Scoped -RouteMetric 1 -PolicyStore ActiveStore -ErrorAction Stop;}"
                     + "try{New-NetRoute -InterfaceIndex $idx -DestinationPrefix '::/0' -NextHop $gw6 -RouteMetric 1 -PolicyStore PersistentStore -ErrorAction SilentlyContinue;}catch{New-NetRoute -InterfaceIndex $idx -DestinationPrefix '::/0' -NextHop $gw6Scoped -RouteMetric 1 -PolicyStore PersistentStore -ErrorAction SilentlyContinue;}"
                     + "Set-StaticDns $idx @($gw) @($gw6);";
@@ -1570,7 +1573,7 @@ namespace YuanxinGateway
         {
             OriginalConfig original = LoadOriginal();
             WifiConfig current = GetCurrentNetworkConfig();
-            int index = original.InterfaceIndex > 0 ? original.InterfaceIndex : (current == null ? 0 : current.InterfaceIndex);
+            int index = ResolveCurrentInterfaceIndex(original, current);
             if (index <= 0)
             {
                 throw new InvalidOperationException("没有可恢复的网卡接口信息。");
@@ -1605,7 +1608,7 @@ namespace YuanxinGateway
 
             if (original.IsDnsDhcp || original.DnsServers.Count == 0)
             {
-                command += "Set-DnsClientServerAddress -InterfaceIndex $idx -ResetServerAddresses -ErrorAction Stop;";
+                command += "try{Set-DnsClientServerAddress -InterfaceIndex $idx -ResetServerAddresses -ErrorAction Stop;}catch{Set-NetshDnsFamily 'ipv4' $idx @();Set-NetshDnsFamily 'ipv6' $idx @();}";
             }
             else
             {
@@ -1632,6 +1635,7 @@ namespace YuanxinGateway
             using (RegistryKey key = Registry.CurrentUser.CreateSubKey(RegistryPath + "\\Original"))
             {
                 key.SetValue("InterfaceAlias", config.InterfaceAlias ?? string.Empty, RegistryValueKind.String);
+                key.SetValue("InterfaceId", config.InterfaceId ?? string.Empty, RegistryValueKind.String);
                 key.SetValue("InterfaceIndex", config.InterfaceIndex, RegistryValueKind.DWord);
                 key.SetValue("Gateway", config.Gateway ?? string.Empty, RegistryValueKind.String);
                 key.SetValue("GatewayIpv6", string.Join(";", config.Ipv6Gateways.ToArray()), RegistryValueKind.String);
@@ -1664,6 +1668,8 @@ namespace YuanxinGateway
                 }
 
                 config.InterfaceIndex = Convert.ToInt32(key.GetValue("InterfaceIndex", 0));
+                config.InterfaceAlias = Convert.ToString(key.GetValue("InterfaceAlias", string.Empty));
+                config.InterfaceId = Convert.ToString(key.GetValue("InterfaceId", string.Empty));
                 config.Gateway = Convert.ToString(key.GetValue("Gateway", string.Empty));
                 string gatewayIpv6 = Convert.ToString(key.GetValue("GatewayIpv6", string.Empty));
                 if (!string.IsNullOrEmpty(gatewayIpv6))
@@ -1678,6 +1684,75 @@ namespace YuanxinGateway
                 config.IsDnsDhcp = Convert.ToInt32(key.GetValue("IsDnsDhcp", 0)) == 1;
             }
             return config;
+        }
+
+        private static int ResolveCurrentInterfaceIndex(OriginalConfig original, WifiConfig current)
+        {
+            if (!string.IsNullOrEmpty(original.InterfaceId) || !string.IsNullOrEmpty(original.InterfaceAlias))
+            {
+                foreach (NetworkInterface item in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    try
+                    {
+                        IPInterfaceProperties props = item.GetIPProperties();
+                        IPv4InterfaceProperties ipv4Props = props.GetIPv4Properties();
+                        if (ipv4Props == null)
+                        {
+                            continue;
+                        }
+
+                        bool idMatch = !string.IsNullOrEmpty(original.InterfaceId) &&
+                            string.Equals(item.Id, original.InterfaceId, StringComparison.OrdinalIgnoreCase);
+                        bool aliasMatch = !string.IsNullOrEmpty(original.InterfaceAlias) &&
+                            string.Equals(item.Name, original.InterfaceAlias, StringComparison.OrdinalIgnoreCase);
+                        if (idMatch || aliasMatch)
+                        {
+                            return ipv4Props.Index;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+
+            if (current != null && current.InterfaceIndex > 0)
+            {
+                if (original.InterfaceIndex <= 0 ||
+                    string.IsNullOrEmpty(original.InterfaceId) ||
+                    string.Equals(current.InterfaceId, original.InterfaceId, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(current.InterfaceAlias, original.InterfaceAlias, StringComparison.OrdinalIgnoreCase))
+                {
+                    return current.InterfaceIndex;
+                }
+            }
+
+            if (original.InterfaceIndex > 0 && InterfaceIndexExists(original.InterfaceIndex))
+            {
+                return original.InterfaceIndex;
+            }
+
+            return 0;
+        }
+
+        private static bool InterfaceIndexExists(int interfaceIndex)
+        {
+            foreach (NetworkInterface item in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                try
+                {
+                    IPv4InterfaceProperties ipv4Props = item.GetIPProperties().GetIPv4Properties();
+                    if (ipv4Props != null && ipv4Props.Index == interfaceIndex)
+                    {
+                        return true;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return false;
         }
 
         private static void ClearOriginal()
@@ -1892,6 +1967,8 @@ namespace YuanxinGateway
 
         private sealed class OriginalConfig
         {
+            public string InterfaceAlias;
+            public string InterfaceId;
             public int InterfaceIndex;
             public string Gateway;
             public List<string> Ipv6Gateways = new List<string>();
