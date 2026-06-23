@@ -108,27 +108,6 @@ is_dns_dhcp() {
     [[ "$dns" == *"aren't any DNS Servers"* ]] && echo "true" || echo "false"
 }
 
-# Save current network configuration
-save_backup() {
-    local service="$1"
-    local gateway=$(get_current_gateway "$service")
-    local dns=$(get_current_dns "$service")
-    local is_dhcp=$(is_dns_dhcp "$service")
-
-    # Get current IPv6 default route
-    local ipv6_gateway=$(netstat -nr -f inet6 | awk '/^default/ {print $2; exit}')
-
-    cat > "$BACKUP_FILE" <<EOF
-{
-  "service": "$service",
-  "gateway": "$gateway",
-  "ipv6_gateway": "$ipv6_gateway",
-  "dns": "$dns",
-  "is_dhcp": $is_dhcp
-}
-EOF
-}
-
 # Check if gateway is active
 is_gateway_active() {
     local target_gateway="$1"
@@ -161,20 +140,14 @@ enable_gateway() {
         exit 1
     fi
 
-    # Save current configuration
-    save_backup "$service"
-
-    # Get current IP address and subnet
+    # Get current IPv4 address and subnet
     local current_ip=$(networksetup -getinfo "$service" | awk '/^IP address:/ {print $3}')
     local subnet_mask=$(networksetup -getinfo "$service" | awk '/^Subnet mask:/ {print $3}')
 
-    # If no IP assigned, try to get it from ifconfig
+    # Fallback to ifconfig if networksetup fails
     if [ -z "$current_ip" ] || [ "$current_ip" = "none" ]; then
-        echo "WARNING: No IP from networksetup, trying ifconfig..."
         current_ip=$(ifconfig "$device" | awk '/inet / {print $2}')
         subnet_mask=$(ifconfig "$device" | awk '/inet / {print $4}' | sed 's/0x//')
-
-        # Convert hex subnet to decimal
         if [ -n "$subnet_mask" ]; then
             subnet_mask=$(python3 -c "import socket,struct;print(socket.inet_ntoa(struct.pack('>I', int('$subnet_mask', 16))))")
         fi
@@ -186,18 +159,23 @@ enable_gateway() {
     fi
 
     # Set manual IPv4 with new gateway
-    echo "Setting IPv4 gateway to $target_gateway..."
+    echo "Setting IPv4: $current_ip/$subnet_mask, gateway: $target_gateway"
     networksetup -setmanual "$service" "$current_ip" "$subnet_mask" "$target_gateway"
 
-    # Set IPv6 gateway if configured
+    # Set IPv6 if configured
     if [ -n "$target_gateway_ipv6" ]; then
-        echo "Setting IPv6 gateway to $target_gateway_ipv6..."
-        # macOS uses route command for IPv6
-        sudo route delete -inet6 default >/dev/null 2>&1 || true
-        sudo route add -inet6 default "$target_gateway_ipv6" >/dev/null 2>&1
+        # Get current IPv6 global address (not link-local fe80::)
+        local current_ipv6=$(ifconfig "$device" | awk '/inet6 / && !/fe80::/ {print $2; exit}')
+
+        if [ -n "$current_ipv6" ]; then
+            echo "Setting IPv6: $current_ipv6/64, gateway: $target_gateway_ipv6"
+            networksetup -setv6manual "$service" "$current_ipv6" 64 "$target_gateway_ipv6"
+        else
+            echo "WARNING: No IPv6 address found, skipping IPv6 configuration"
+        fi
     fi
 
-    # Set DNS servers (both IPv4 and IPv6 gateway)
+    # Set DNS servers
     echo "Setting DNS servers..."
     if [ -n "$target_gateway_ipv6" ]; then
         networksetup -setdnsservers "$service" "$target_gateway" "$target_gateway_ipv6"
@@ -212,83 +190,32 @@ enable_gateway() {
     echo "Gateway enabled successfully"
 }
 
-# Restore original configuration
+# Restore to DHCP/Automatic configuration
 restore_gateway() {
-    if [ ! -f "$BACKUP_FILE" ]; then
-        echo "ERROR: No backup found"
+    local service=$(get_wifi_service)
+
+    if [ -z "$service" ]; then
+        echo "ERROR: No Wi-Fi service found"
         exit 1
     fi
 
-    # Read backup file with better error handling
-    local service=""
-    local gateway=""
-    local ipv6_gateway=""
-    local dns=""
-    local is_dhcp="false"
+    echo "Restoring to automatic configuration..."
 
-    # Try to parse JSON, handle both old and new formats
-    if command -v python3 &> /dev/null; then
-        service=$(python3 -c "import json; d=json.load(open('$BACKUP_FILE')); print(d.get('service', d.get('interface', '')))" 2>/dev/null || echo "")
-        gateway=$(python3 -c "import json; d=json.load(open('$BACKUP_FILE')); print(d.get('gateway', ''))" 2>/dev/null || echo "")
-        ipv6_gateway=$(python3 -c "import json; d=json.load(open('$BACKUP_FILE')); print(d.get('ipv6_gateway', ''))" 2>/dev/null || echo "")
-        dns=$(python3 -c "import json; d=json.load(open('$BACKUP_FILE')); print(d.get('dns', ''))" 2>/dev/null || echo "")
-        is_dhcp=$(python3 -c "import json; d=json.load(open('$BACKUP_FILE')); print(d.get('is_dhcp', 'false'))" 2>/dev/null || echo "false")
-    fi
+    # Restore IPv4 to DHCP
+    echo "Setting IPv4 to DHCP..."
+    networksetup -setdhcp "$service"
 
-    # If parsing failed or service is empty, try to get current service
-    if [ -z "$service" ]; then
-        echo "WARNING: Could not read service from backup, using current Wi-Fi service..."
-        service=$(get_wifi_service)
-        if [ -z "$service" ]; then
-            echo "ERROR: Cannot determine Wi-Fi service"
-            exit 1
-        fi
-    fi
+    # Restore IPv6 to Automatic
+    echo "Setting IPv6 to Automatic..."
+    networksetup -setv6automatic "$service"
 
-    echo "Restoring configuration for service: $service"
-
-    # Get current IP and subnet
-    local current_ip=$(networksetup -getinfo "$service" | awk '/^IP address:/ {print $3}')
-    local subnet_mask=$(networksetup -getinfo "$service" | awk '/^Subnet mask:/ {print $3}')
-
-    # Restore IPv4 gateway
-    if [ -n "$gateway" ] && [ "$gateway" != "none" ]; then
-        echo "Restoring IPv4 gateway to $gateway..."
-        networksetup -setmanual "$service" "$current_ip" "$subnet_mask" "$gateway"
-    else
-        echo "No IPv4 gateway to restore"
-    fi
-
-    # Restore IPv6 gateway
-    if [ -n "$ipv6_gateway" ] && [ "$ipv6_gateway" != "none" ]; then
-        echo "Restoring IPv6 gateway to $ipv6_gateway..."
-        sudo route delete -inet6 default >/dev/null 2>&1 || true
-        sudo route add -inet6 default "$ipv6_gateway" >/dev/null 2>&1 || true
-    fi
-
-    # Restore DNS
-    echo "Restoring DNS..."
-    if [ "$is_dhcp" = "true" ]; then
-        networksetup -setdnsservers "$service" "Empty"
-    else
-        if [ -n "$dns" ]; then
-            IFS=',' read -ra DNS_ARRAY <<< "$dns"
-            if [ ${#DNS_ARRAY[@]} -gt 0 ]; then
-                networksetup -setdnsservers "$service" "${DNS_ARRAY[@]}"
-            else
-                networksetup -setdnsservers "$service" "Empty"
-            fi
-        else
-            networksetup -setdnsservers "$service" "Empty"
-        fi
-    fi
+    # Clear DNS (will follow DHCP)
+    echo "Clearing DNS servers..."
+    networksetup -setdnsservers "$service" "Empty"
 
     # Flush DNS cache
     sudo dscacheutil -flushcache
     sudo killall -HUP mDNSResponder 2>/dev/null || true
-
-    # Remove old backup file to prevent future issues
-    rm -f "$BACKUP_FILE"
 
     echo "Gateway restored successfully"
 }
