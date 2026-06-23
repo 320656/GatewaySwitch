@@ -88,9 +88,14 @@ jobs:
 
         # Create temporary directory for DMG contents
         mkdir -p dmg
+
+        # Copy app to dmg folder
         cp -R GatewaySwitch.app dmg/
 
-        # Create DMG
+        # Create symbolic link to Applications folder
+        ln -s /Applications dmg/Applications
+
+        # Create DMG with custom layout
         hdiutil create -volname "GatewaySwitch" -srcfolder dmg -ov -format UDZO GatewaySwitch.dmg
 
     - name: Upload artifact
